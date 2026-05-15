@@ -1,0 +1,18 @@
+# Секреты — никогда не в репозиторий
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Данные (Word-файлы и фото хранятся отдельно)
+data/
+*.docx
+*.doc
+
+# OS
+.DS_Store
+Thumbs.db
