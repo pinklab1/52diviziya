@@ -15,7 +15,7 @@
 ## Структура репозитория
 
 ```
-division52/
+52diviziya/
 ├── docker-compose.yml        — все сервисы
 ├── .env.example              — шаблон переменных окружения
 ├── nginx/
@@ -43,8 +43,8 @@ apt install docker-compose-plugin -y
 ### 2. Клонирование репозитория
 
 ```bash
-git clone https://github.com/ТВОЙаккаунт/division52.git
-cd division52
+git clone https://github.com/pinklab1/52diviziya.git
+cd 52diviziya
 ```
 
 ### 3. Настройка окружения
@@ -58,13 +58,13 @@ nano .env   # заполни пароли и домен
 
 ```bash
 apt install certbot -y
-certbot certonly --standalone -d твой-домен.ru
+certbot certonly --standalone -d 52sd.ru
 ```
 
 ### 5. Папка для фотографий
 
 ```bash
-mkdir -p /var/division52/photos/officers
+mkdir -p /var/52diviziya/photos/officers
 ```
 
 ### 6. Запуск
@@ -139,11 +139,11 @@ GET /api/persons?id=eq.42&select=*,service_records(*,units(*))
 
 ```bash
 # Копируй фото на сервер
-scp officers/*.jpg root@твой-домен.ru:/var/division52/photos/officers/
+scp officers/*.jpg root@52sd.ru:/var/52diviziya/photos/officers/
 
 # Конвертация в webp для экономии трафика (опционально)
 apt install webp -y
-for f in /var/division52/photos/officers/*.jpg; do
+for f in /var/52diviziya/photos/officers/*.jpg; do
   cwebp -q 85 "$f" -o "${f%.jpg}.webp"
 done
 ```
