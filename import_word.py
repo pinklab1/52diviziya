@@ -27,8 +27,8 @@ load_dotenv()
 # ── Подключение к БД ──────────────────────────────────────────────────────
 def get_db():
     return psycopg2.connect(
-        dbname=os.getenv('POSTGRES_DB',       'division52'),
-        user=os.getenv('POSTGRES_USER',        'division52_user'),
+        dbname=os.getenv('POSTGRES_DB',       'diviziya52'),
+        user=os.getenv('POSTGRES_USER',        'diviziya52_user'),
         password=os.getenv('POSTGRES_PASSWORD',''),
         host=os.getenv('POSTGRES_HOST',        'localhost'),
         port=os.getenv('POSTGRES_PORT',        '5432'),

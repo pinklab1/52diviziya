@@ -4,7 +4,7 @@ services:
 
   db:
     image: postgres:16-alpine
-    container_name: division52_db
+    container_name: 52diviziya_db
     restart: unless-stopped
     environment:
       POSTGRES_DB:       ${POSTGRES_DB}
@@ -23,7 +23,7 @@ services:
 
   postgrest:
     image: postgrest/postgrest:v12.0.2
-    container_name: division52_api
+    container_name: 52diviziya_api
     restart: unless-stopped
     depends_on:
       db:
@@ -39,7 +39,7 @@ services:
 
   nginx:
     image: nginx:alpine
-    container_name: division52_nginx
+    container_name: 52diviziya_nginx
     restart: unless-stopped
     depends_on:
       - postgrest
@@ -49,7 +49,7 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./frontend:/var/www/html:ro              # статика фронтенда
-      - /var/division52/photos:/var/www/photos:ro # фотографии офицеров
+      - /var/52diviziya/photos:/var/www/photos:ro # фотографии офицеров
       - /etc/letsencrypt:/etc/letsencrypt:ro      # SSL сертификаты
 
 volumes:
