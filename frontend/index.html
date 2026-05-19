@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>52-я стрелковая дивизия — Архив</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #1a1208;
+    --paper: #f5ede0;
+    --aged: #e8d5b7;
+    --cream: #f9f3e6;
+    --rust: #8b3a1a;
+    --gold: #b8860b;
+    --faded: #7a6a54;
+    --red: #9b1c1c;
+    --line: #c4a882;
+    --line-dim: rgba(196,168,130,0.3);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'PT Serif', Georgia, serif;
+    min-height: 100vh;
+    line-height: 1.5;
+    background-image:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='400' height='400' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  }
+
+  /* ── HEADER ── */
+  header {
+    background: var(--ink);
+    color: var(--aged);
+    padding: 2rem 2rem 1.5rem;
+    position: relative;
+    overflow: hidden;
+    border-bottom: 3px double var(--gold);
+  }
+  header::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(
+      0deg, transparent, transparent 2px,
+      rgba(255,255,255,0.012) 2px, rgba(255,255,255,0.012) 4px
+    );
+    pointer-events: none;
+  }
+  .header-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    position: relative;
+  }
+  .kicker {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.62rem;
+    letter-spacing: 0.4em;
+    color: var(--gold);
+    text-transform: uppercase;
+    margin-bottom: 0.6rem;
+    opacity: 0.85;
+  }
+  h1 {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: clamp(1.6rem, 3.5vw, 2.6rem);
+    font-weight: 900;
+    line-height: 1.05;
+    color: var(--aged);
+    letter-spacing: -0.01em;
+  }
+  h1 em {
+    font-style: italic;
+    color: var(--gold);
+    font-weight: 400;
+  }
+  .header-sub {
+    margin-top: 0.7rem;
+    font-family: 'PT Serif', serif;
+    font-style: italic;
+    font-size: 0.95rem;
+    color: rgba(232,213,183,0.7);
+  }
+
+  /* ── STATS ── */
+  .stats {
+    max-width: 1200px;
+    margin: 1.5rem auto 0;
+    padding: 0 2rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 0;
+    border: 1px solid var(--line);
+    background: var(--cream);
+  }
+  .stat {
+    padding: 0.9rem 1rem;
+    text-align: center;
+    border-right: 1px solid var(--line);
+    position: relative;
+  }
+  .stat:last-child { border-right: none; }
+  .stat-val {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 1.8rem;
+    font-weight: 900;
+    color: var(--rust);
+    line-height: 1;
+    display: block;
+  }
+  .stat-lbl {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.6rem;
+    letter-spacing: 0.18em;
+    color: var(--faded);
+    text-transform: uppercase;
+    margin-top: 0.4rem;
+    display: block;
+  }
+
+  /* ── SEARCH BAR ── */
+  .search-section {
+    max-width: 1200px;
+    margin: 1.5rem auto 0;
+    padding: 0 2rem;
+  }
+  .search-bar {
+    display: flex;
+    gap: 0.6rem;
+    align-items: stretch;
+    background: var(--cream);
+    border: 1px solid var(--line);
+    padding: 0.5rem;
+    box-shadow: 3px 3px 0 var(--line);
+  }
+  .search-input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    padding: 0.5rem 0.8rem;
+    font-family: 'PT Serif', serif;
+    font-size: 1rem;
+    color: var(--ink);
+    outline: none;
+  }
+  .search-input::placeholder { color: var(--faded); font-style: italic; }
+  .search-btn {
+    background: var(--ink);
+    color: var(--aged);
+    border: none;
+    padding: 0.5rem 1.5rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .search-btn:hover { background: var(--rust); }
+
+  /* ── FILTERS ── */
+  .filters {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    margin-top: 0.8rem;
+  }
+  .filter {
+    background: transparent;
+    border: 1px solid var(--line);
+    padding: 0.32rem 0.8rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+    color: var(--faded);
+    cursor: pointer;
+    transition: all 0.15s;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .filter:hover { color: var(--ink); border-color: var(--ink); }
+  .filter.active {
+    background: var(--ink);
+    color: var(--aged);
+    border-color: var(--ink);
+  }
+
+  /* ── RESULTS COUNT ── */
+  .results-meta {
+    max-width: 1200px;
+    margin: 1.5rem auto 0.6rem;
+    padding: 0 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.15em;
+    color: var(--faded);
+    text-transform: uppercase;
+  }
+
+  /* ── GRID ── */
+  .grid {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 2rem 4rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.2rem;
+  }
+
+  .card {
+    background: var(--cream);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--line);
+    padding: 1.1rem 1.2rem;
+    cursor: pointer;
+    transition: all 0.15s;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-height: 160px;
+  }
+  .card:hover {
+    border-left-color: var(--rust);
+    box-shadow: 3px 3px 0 var(--line);
+    transform: translate(-1px, -1px);
+  }
+  .card.killed { border-left-color: var(--red); }
+
+  .card-photo {
+    width: 48px; height: 60px;
+    background: var(--aged);
+    border: 1px solid var(--faded);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--faded);
+    font-family: 'Playfair Display', serif;
+    font-size: 1.5rem;
+    margin-bottom: 0.8rem;
+    flex-shrink: 0;
+  }
+  .card-name {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--ink);
+    line-height: 1.25;
+    margin-bottom: 0.2rem;
+  }
+  .card-name em {
+    font-style: normal;
+    color: var(--faded);
+    font-weight: 400;
+  }
+  .card-birth {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--gold);
+    letter-spacing: 0.1em;
+    margin-bottom: 0.6rem;
+  }
+  .card-rank {
+    font-family: 'PT Serif', serif;
+    font-style: italic;
+    font-size: 0.85rem;
+    color: var(--faded);
+    margin-bottom: 0.4rem;
+  }
+  .card-role {
+    font-size: 0.88rem;
+    color: var(--ink);
+    line-height: 1.4;
+    flex: 1;
+  }
+  .card-unit {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.62rem;
+    color: var(--rust);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-top: 0.6rem;
+    padding-top: 0.6rem;
+    border-top: 1px dashed var(--line-dim);
+  }
+  .card-death {
+    position: absolute;
+    top: 0.6rem; right: 0.8rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.58rem;
+    color: var(--red);
+    letter-spacing: 0.05em;
+  }
+  .card-death::before { content: '† '; }
+
+  /* loading & empty */
+  .loading, .empty {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--faded);
+    font-style: italic;
+  }
+  .loading::after {
+    content: '⋯';
+    animation: pulse 1.4s ease infinite;
+    display: inline-block;
+    margin-left: 0.3rem;
+  }
+  @keyframes pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+
+  /* ── MODAL ── */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(26,18,8,0.75);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 2rem 1rem;
+    animation: fadeIn 0.2s;
+  }
+  .modal-backdrop.show { display: flex; }
+
+  .modal {
+    background: var(--paper);
+    max-width: 600px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    padding: 2rem;
+    border: 1px solid var(--ink);
+    box-shadow: 8px 8px 0 var(--rust);
+    position: relative;
+    animation: slideUp 0.3s ease;
+  }
+  .modal-close {
+    position: absolute;
+    top: 0.8rem; right: 1rem;
+    background: none;
+    border: none;
+    font-size: 1.8rem;
+    color: var(--faded);
+    cursor: pointer;
+    line-height: 1;
+    transition: color 0.15s;
+  }
+  .modal-close:hover { color: var(--rust); }
+
+  .m-photo {
+    width: 100px; height: 130px;
+    background: var(--aged);
+    border: 1px solid var(--faded);
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--faded);
+    font-family: 'Playfair Display', serif;
+    font-size: 3rem;
+  }
+  .m-name {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 1.7rem;
+    font-weight: 700;
+    line-height: 1.15;
+    margin-bottom: 0.3rem;
+  }
+  .m-meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--gold);
+    letter-spacing: 0.1em;
+    margin-bottom: 1.2rem;
+  }
+  .m-section {
+    margin-top: 1.2rem;
+    padding-top: 1.2rem;
+    border-top: 1px solid var(--line-dim);
+  }
+  .m-section-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.62rem;
+    color: var(--faded);
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    margin-bottom: 0.7rem;
+  }
+  .m-service {
+    margin-bottom: 0.8rem;
+    padding-left: 0.8rem;
+    border-left: 2px solid var(--gold);
+  }
+  .m-service-role {
+    font-family: 'PT Serif', serif;
+    font-size: 0.95rem;
+    color: var(--ink);
+    line-height: 1.4;
+  }
+  .m-service-unit {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--rust);
+    letter-spacing: 0.08em;
+    margin-top: 0.15rem;
+    text-transform: uppercase;
+  }
+  .m-rank {
+    display: inline-block;
+    font-family: 'PT Serif', serif;
+    font-style: italic;
+    font-size: 0.85rem;
+    color: var(--faded);
+    margin-top: 0.2rem;
+  }
+
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @media (max-width: 600px) {
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .stat:nth-child(2) { border-right: none; }
+    .stat:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+    .grid { grid-template-columns: 1fr; }
+    .modal { padding: 1.5rem; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:1rem;">
+    <div>
+      <div class="kicker">РККА · Великая Отечественная война · 1941–1945</div>
+      <h1>52-я стрелковая <em>дивизия</em></h1>
+      <div class="header-sub">Архив командного и личного состава</div>
+    </div>
+    <nav style="display:flex;gap:0.4rem;">
+      <a href="/" class="nav-link active">Архив персоналий</a>
+      <a href="/combat-path.html" class="nav-link">Боевой путь</a>
+    </nav>
+  </div>
+</header>
+<style>
+  .nav-link {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: rgba(232,213,183,0.6);
+    text-decoration: none;
+    padding: 0.4rem 0.9rem;
+    border: 1px solid transparent;
+    transition: all 0.15s;
+  }
+  .nav-link:hover { color: var(--aged); border-color: rgba(196,168,130,0.3); }
+  .nav-link.active { color: var(--gold); border-color: var(--gold); }
+</style>
+
+<div class="stats">
+  <div class="stat"><span class="stat-val" id="stTotal">—</span><span class="stat-lbl">персон</span></div>
+  <div class="stat"><span class="stat-val" id="stUnits">—</span><span class="stat-lbl">подразделений</span></div>
+  <div class="stat"><span class="stat-val" id="stKilled">—</span><span class="stat-lbl">погибших</span></div>
+  <div class="stat"><span class="stat-val">1941—45</span><span class="stat-lbl">годы службы</span></div>
+</div>
+
+<div class="search-section">
+  <div class="search-bar">
+    <input class="search-input" id="search" type="text"
+           placeholder="Фамилия, должность, подразделение, звание...">
+    <button class="search-btn" id="searchBtn">Найти</button>
+  </div>
+  <div class="filters">
+    <button class="filter active" data-unit="">Все</button>
+    <button class="filter" data-unit="429">429-й СП</button>
+    <button class="filter" data-unit="431">431-й СП</button>
+    <button class="filter" data-unit="439">439-й СП</button>
+    <button class="filter" data-unit="1028">1028-й АП</button>
+    <button class="filter" data-unit="52">Штаб дивизии</button>
+    <button class="filter" data-unit="164">164-й сапбат</button>
+    <button class="filter" data-unit="405">405-й ИПТД</button>
+    <button class="filter" data-unit="106">106</button>
+  </div>
+</div>
+
+<div class="results-meta">
+  <span id="resultsCount">Загрузка...</span>
+  <span>Архивные документы</span>
+</div>
+
+<div class="grid" id="grid">
+  <div class="loading">Загружаю архив</div>
+</div>
+
+<!-- Модалка -->
+<div class="modal-backdrop" id="modal">
+  <div class="modal">
+    <button class="modal-close" id="modalClose">×</button>
+    <div id="modalContent"></div>
+  </div>
+</div>
+
+<script>
+const API = '/api';
+let allPersons = [];
+let allUnits = [];
+let currentUnit = '';
+let currentSearch = '';
+
+// ── ЗАГРУЗКА ──────────────────────────────────────────────────────────
+async function loadData() {
+  try {
+    const [persons, units] = await Promise.all([
+      fetch(`${API}/persons?select=*,service_records(*,units(*))&limit=1000`).then(r => r.json()),
+      fetch(`${API}/units`).then(r => r.json()),
+    ]);
+    allPersons = persons;
+    allUnits = units;
+    updateStats();
+    render();
+  } catch (e) {
+    document.getElementById('grid').innerHTML =
+      '<div class="empty">Не удалось загрузить данные. Проверьте подключение к серверу.</div>';
+    console.error(e);
+  }
+}
+
+function updateStats() {
+  document.getElementById('stTotal').textContent = allPersons.length;
+  document.getElementById('stUnits').textContent = allUnits.length;
+  document.getElementById('stKilled').textContent =
+    allPersons.filter(p => p.death_date).length;
+}
+
+// ── ФИЛЬТРАЦИЯ ────────────────────────────────────────────────────────
+function filter() {
+  const q = currentSearch.toLowerCase().trim();
+  return allPersons.filter(p => {
+    // фильтр по подразделению
+    if (currentUnit) {
+      const inUnit = (p.service_records || []).some(sr =>
+        sr.units && sr.units.name && sr.units.name.includes(currentUnit + '-й') ||
+        (currentUnit === '52' && sr.units && sr.units.name && sr.units.name.includes('Штаб 52'))
+      );
+      if (!inUnit) return false;
+    }
+    // поиск по тексту
+    if (q) {
+      const text = [
+        p.last_name, p.first_name, p.patronymic,
+        ...(p.service_records || []).flatMap(sr => [
+          sr.rank, sr.role,
+          sr.units && sr.units.name
+        ])
+      ].filter(Boolean).join(' ').toLowerCase();
+      if (!text.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+// ── РЕНДЕР ────────────────────────────────────────────────────────────
+function render() {
+  const list = filter();
+  const grid = document.getElementById('grid');
+  document.getElementById('resultsCount').textContent =
+    `Найдено: ${list.length}`;
+
+  if (list.length === 0) {
+    grid.innerHTML = '<div class="empty">По запросу ничего не найдено</div>';
+    return;
+  }
+
+  grid.innerHTML = list.slice(0, 200).map(p => {
+    const fio = [p.last_name, p.first_name, p.patronymic].filter(Boolean).join(' ');
+    const initials = (p.last_name || '?').charAt(0);
+    const firstService = (p.service_records || [])[0] || {};
+    const rank = firstService.rank;
+    const role = firstService.role || '—';
+    const unit = firstService.units && firstService.units.name || '';
+    const birth = p.birth_date ? new Date(p.birth_date).getFullYear() : null;
+    const death = p.death_date ? formatDate(p.death_date) : null;
+
+    return `
+      <div class="card ${death ? 'killed' : ''}" data-id="${p.id}">
+        ${death ? `<div class="card-death">${death}</div>` : ''}
+        <div class="card-photo">${initials}</div>
+        <div class="card-name">${escapeHtml(fio)}</div>
+        ${birth ? `<div class="card-birth">${birth} г.р.</div>` : ''}
+        ${rank ? `<div class="card-rank">${escapeHtml(rank)}</div>` : ''}
+        <div class="card-role">${escapeHtml(role)}</div>
+        ${unit ? `<div class="card-unit">${escapeHtml(unit)}</div>` : ''}
+      </div>
+    `;
+  }).join('');
+
+  // Click handlers
+  grid.querySelectorAll('.card').forEach(card => {
+    card.addEventListener('click', () => {
+      const id = parseInt(card.dataset.id);
+      const person = allPersons.find(p => p.id === id);
+      if (person) openModal(person);
+    });
+  });
+}
+
+// ── МОДАЛКА ───────────────────────────────────────────────────────────
+function openModal(p) {
+  const fio = [p.last_name, p.first_name, p.patronymic].filter(Boolean).join(' ');
+  const initials = (p.last_name || '?').charAt(0);
+  const birth = p.birth_date ? new Date(p.birth_date).getFullYear() : null;
+  const death = p.death_date ? formatDate(p.death_date) : null;
+
+  const services = (p.service_records || []).map(sr => `
+    <div class="m-service">
+      <div class="m-service-role">${escapeHtml(sr.role || '—')}</div>
+      ${sr.units && sr.units.name ? `<div class="m-service-unit">${escapeHtml(sr.units.name)}</div>` : ''}
+      ${sr.rank ? `<div class="m-rank">${escapeHtml(sr.rank)}</div>` : ''}
+    </div>
+  `).join('');
+
+  document.getElementById('modalContent').innerHTML = `
+    <div class="m-photo">${initials}</div>
+    <div class="m-name">${escapeHtml(fio)}</div>
+    <div class="m-meta">
+      ${birth ? `${birth} год рождения` : 'Год рождения неизвестен'}
+      ${death ? ` · погиб ${death}` : ''}
+    </div>
+    <div class="m-section">
+      <div class="m-section-title">Послужной список</div>
+      ${services || '<div class="m-service"><div class="m-service-role">Сведения не сохранились</div></div>'}
+    </div>
+  `;
+  document.getElementById('modal').classList.add('show');
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('show');
+}
+
+// ── HELPERS ───────────────────────────────────────────────────────────
+function escapeHtml(s) {
+  if (!s) return '';
+  return s.replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  })[c]);
+}
+function formatDate(s) {
+  const d = new Date(s);
+  return `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.${d.getFullYear()}`;
+}
+
+// ── EVENTS ────────────────────────────────────────────────────────────
+document.getElementById('searchBtn').addEventListener('click', () => {
+  currentSearch = document.getElementById('search').value;
+  render();
+});
+document.getElementById('search').addEventListener('input', e => {
+  currentSearch = e.target.value;
+  render();
+});
+document.querySelectorAll('.filter').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.filter').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    currentUnit = b.dataset.unit;
+    render();
+  });
+});
+document.getElementById('modalClose').addEventListener('click', closeModal);
+document.getElementById('modal').addEventListener('click', e => {
+  if (e.target.id === 'modal') closeModal();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeModal();
+});
+
+loadData();
+</script>
+</body>
+</html>
