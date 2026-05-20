@@ -215,12 +215,151 @@ def find_person(cur, last, first, pat):
     return None, 'not_found'
 
 
+# ════════════════════════════════════════════════════════════════════
+# Извлечение дополнительной информации из имени файла:
+# год рождения, подразделение, должность, звание.
+# ════════════════════════════════════════════════════════════════════
+
+UNIT_FROM_FILENAME = [
+    ('52 сд', r'\b52\s*сд\b'),
+    ('429 сп', r'\b429\s*сп\b'),
+    ('431 сп', r'\b431\s*сп\b'),
+    ('439 сп', r'\b439\s*сп\b'),
+    ('1028 ап', r'\b1028\s*ап\b'),
+    ('106 осанб', r'\b106\s*(?:осанб|мсб)\b'),
+    ('164 осапб', r'\b164\b'),  # часто пишут просто "164"
+    ('405 оиптд', r'\b405\s*оиптд\b'),
+    ('587 обс', r'\b587\s*обс\b'),
+    ('127 орр', r'\b127\s*орр\b'),
+    ('42 орхз', r'\b42\s*орхз\b'),
+]
+
+RANK_FROM_FILENAME = [
+    ('старший лейтенант', r'\bст\.?\s*л-?т\b|\bстл-?т\b'),
+    ('младший лейтенант', r'\bмл\.?\s*л-?т\b|\bмлл-?т\b|\bмл-?т\b'),
+    ('лейтенант', r'\b(?:л-?т|лейтенант|л-нт)\b'),
+    ('капитан', r'\b(?:к-н|капитан)\b'),
+    ('майор', r'\bмайор\b'),
+    ('подполковник', r'\b(?:подп-?к|подполковник)\b'),
+    ('полковник', r'\bполковник\b'),
+    ('старшина', r'\b(?:старшина|гвстаршина)\b'),
+    ('сержант', r'\b(?:сержант|гвсержант)\b'),
+    ('старший сержант', r'\bстс-?т\b|\bст\.?\s*с-?т\b'),
+]
+
+
+def extract_year(filename):
+    """Год рождения 1850-1930"""
+    m = re.search(r'\b(18[5-9]\d|19[0-2]\d)\b', filename)
+    return int(m.group(1)) if m else None
+
+
+def extract_unit(filename):
+    """Найти подразделение"""
+    for unit_short, pattern in UNIT_FROM_FILENAME:
+        if re.search(pattern, filename, re.IGNORECASE):
+            return unit_short
+    return None
+
+
+def extract_rank(filename):
+    """Найти звание"""
+    for rank, pattern in RANK_FROM_FILENAME:
+        if re.search(pattern, filename, re.IGNORECASE):
+            return rank
+    return None
+
+
+def extract_role(filename):
+    """Найти должность (грубо - первое 'ком*' или 'нач*' слово)"""
+    # Уберём расширение
+    name = Path(filename).stem
+    # Уберём ФИО (первые 3 слова через _)
+    parts = name.split('_')
+    rest = ' '.join(parts[3:]) if len(parts) > 3 else name
+
+    # Берём первое слово начинающееся с ком/нач/пом/пол/зам/инстр/парт/арт
+    m = re.search(r'\b(?:ком|нач|пом|пол|зам|инстр|парт|арт|воен|сан|мед|секр|перев|трибун)\w+', rest, re.IGNORECASE)
+    if m:
+        return m.group(0).lower()
+    return None
+
+
+UNIT_CACHE = {}
+
+def get_or_create_unit(cur, unit_short, division_id):
+    if not unit_short:
+        return None
+    if unit_short in UNIT_CACHE:
+        return UNIT_CACHE[unit_short]
+
+    UNIT_FULL_NAMES = {
+        '52 сд': 'Управление 52-й стрелковой дивизии',
+        '429 сп': '429-й стрелковый полк',
+        '431 сп': '431-й стрелковый полк',
+        '439 сп': '439-й стрелковый полк',
+        '1028 ап': '1028-й артиллерийский полк',
+        '106 осанб': '106-й отдельный санитарный батальон',
+        '164 осапб': '164-й отдельный сапёрный батальон',
+        '405 оиптд': '405-й истребительно-противотанковый дивизион',
+        '587 обс': '587-й отдельный батальон связи',
+        '127 орр': '127-я отдельная разведрота',
+        '42 орхз': '42-я рота химзащиты',
+    }
+    name = UNIT_FULL_NAMES.get(unit_short, unit_short)
+
+    cur.execute("SELECT id FROM units WHERE name = %s", (name,))
+    row = cur.fetchone()
+    if row:
+        UNIT_CACHE[unit_short] = row[0]
+        return row[0]
+
+    cur.execute(
+        "INSERT INTO units (division_id, name, unit_type) VALUES (%s, %s, %s) RETURNING id",
+        (division_id, name, 'unit')
+    )
+    uid = cur.fetchone()[0]
+    UNIT_CACHE[unit_short] = uid
+    return uid
+
+
+def add_new_person_from_photo(cur, division_id, filename, last, first, pat):
+    """Создаёт нового человека на основе данных из имени файла"""
+    year = extract_year(filename)
+    unit_short = extract_unit(filename)
+    rank = extract_rank(filename)
+    role = extract_role(filename)
+
+    birth_date = f"{year}-01-01" if year else None
+
+    # Создаём человека (sources = это фото)
+    from psycopg2.extras import Json
+    cur.execute("""
+        INSERT INTO persons (last_name, first_name, patronymic, birth_date, sources, last_updated)
+        VALUES (%s, %s, %s, %s, %s, NOW())
+        RETURNING id
+    """, (last, first, pat, birth_date, Json([f"PHOTO:{filename}"])))
+    pid = cur.fetchone()[0]
+
+    # Запись о службе
+    unit_id = get_or_create_unit(cur, unit_short, division_id)
+    if unit_id or role or rank:
+        cur.execute("""
+            INSERT INTO service_records (person_id, unit_id, division_id, rank, role)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (pid, unit_id, division_id, rank, role))
+
+    return pid
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--source', required=True)
     parser.add_argument('--dest', default='/var/52diviziya/photos/officers')
     parser.add_argument('--report', default='unmatched.txt')
     parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--add-missing', action='store_true',
+                        help='Создавать новых людей если не найдены в БД')
     args = parser.parse_args()
 
     source = Path(args.source)
@@ -234,6 +373,10 @@ def main():
 
     db = get_db()
     cur = db.cursor()
+
+    # Получим division_id для возможного добавления людей
+    cur.execute("SELECT id FROM divisions LIMIT 1")
+    division_id = cur.fetchone()[0]
 
     photos = []
     for ext in ('*.jpg', '*.JPG', '*.jpeg', '*.png'):
@@ -252,6 +395,13 @@ def main():
             continue
 
         result, match_type = find_person(cur, last, first, pat)
+
+        # Если не нашли и включена опция --add-missing, создаём
+        if not result and args.add_missing and not args.dry_run:
+            pid = add_new_person_from_photo(cur, division_id, photo.name, last, first, pat)
+            result = (pid, last, first, pat)
+            match_type = 'added_new'
+
         stats[match_type] += 1
 
         if not result:
