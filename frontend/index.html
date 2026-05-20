@@ -523,7 +523,7 @@ let currentSearch = '';
 async function loadData() {
   try {
     const [persons, units] = await Promise.all([
-      fetch(`${API}/persons?select=*,service_records(*,units(*))&limit=1000`).then(r => r.json()),
+      fetch(`${API}/persons?select=*,service_records(*,units(*))&order=last_name.asc,first_name.asc&limit=2000`)
       fetch(`${API}/units`).then(r => r.json()),
     ]);
     allPersons = persons;
@@ -583,7 +583,7 @@ function render() {
     return;
   }
 
-  grid.innerHTML = list.slice(0, 200).map(p => {
+  grid.innerHTML = list.slice(0, 500).map(p => {
     const fio = [p.last_name, p.first_name, p.patronymic].filter(Boolean).join(' ');
     const initials = (p.last_name || '?').charAt(0);
     const firstService = (p.service_records || [])[0] || {};
