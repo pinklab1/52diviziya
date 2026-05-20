@@ -235,7 +235,7 @@
   .card.killed { border-left-color: var(--red); }
 
   .card-photo {
-    width: 48px; height: 60px;
+    width: 60px; height: 75px;
     background: var(--aged);
     border: 1px solid var(--faded);
     display: flex;
@@ -243,10 +243,19 @@
     justify-content: center;
     color: var(--faded);
     font-family: 'Playfair Display', serif;
-    font-size: 1.5rem;
+    font-size: 1.8rem;
     margin-bottom: 0.8rem;
     flex-shrink: 0;
+    overflow: hidden;
+    position: relative;
   }
+  .card-photo img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    filter: sepia(0.15) contrast(1.05);
+  }
+
   .card-name {
     font-family: 'Playfair Display', Georgia, serif;
     font-size: 1.05rem;
@@ -355,8 +364,8 @@
   }
   .modal-close:hover { color: var(--rust); }
 
-  .m-photo {
-    width: 100px; height: 130px;
+ .m-photo {
+    width: 140px; height: 180px;
     background: var(--aged);
     border: 1px solid var(--faded);
     margin-bottom: 1rem;
@@ -366,7 +375,16 @@
     color: var(--faded);
     font-family: 'Playfair Display', serif;
     font-size: 3rem;
+    overflow: hidden;
+    position: relative;
   }
+  .m-photo img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    filter: sepia(0.15) contrast(1.05);
+  }
+
   .m-name {
     font-family: 'Playfair Display', Georgia, serif;
     font-size: 1.7rem;
@@ -596,7 +614,7 @@ function render() {
     return `
       <div class="card ${death ? 'killed' : ''}" data-id="${p.id}">
         ${death ? `<div class="card-death">${death}</div>` : ''}
-        <div class="card-photo">${initials}</div>
+        <div class="card-photo">${p.photo_url ? `<img src="${p.photo_url}" alt="${escapeHtml(fio)}" loading="lazy" onerror="this.parentElement.innerHTML='${initials}'">` : initials}</div>
         <div class="card-name">${escapeHtml(fio)}</div>
         ${birth ? `<div class="card-birth">${birth} г.р.</div>` : ''}
         ${rank ? `<div class="card-rank">${escapeHtml(rank)}</div>` : ''}
@@ -632,7 +650,7 @@ function openModal(p) {
   `).join('');
 
   document.getElementById('modalContent').innerHTML = `
-    <div class="m-photo">${initials}</div>
+    <div class="m-photo">${p.photo_url ? `<img src="${p.photo_url}" alt="${escapeHtml(fio)}" onerror="this.parentElement.innerHTML='${initials}'">` : initials}</div>
     <div class="m-name">${escapeHtml(fio)}</div>
     <div class="m-meta">
       ${birth ? `${birth} год рождения` : 'Год рождения неизвестен'}
