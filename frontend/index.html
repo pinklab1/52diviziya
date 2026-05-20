@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="partials/footer.css">
 <style>
   :root {
     --ink: #1a1208;
@@ -434,6 +435,7 @@
     .grid { grid-template-columns: 1fr; }
     .modal { padding: 1.5rem; }
   }
+
 </style>
 </head>
 <body>
@@ -687,5 +689,14 @@ document.addEventListener('keydown', e => {
 
 loadData();
 </script>
+
+<div id="footer-mount"></div>
+<script>
+  fetch('partials/footer.html')
+    .then(r => r.ok ? r.text() : Promise.reject(r.status))
+    .then(html => { document.getElementById('footer-mount').outerHTML = html; })
+    .catch(err => console.warn('footer load failed:', err));
+</script>
+
 </body>
 </html>
