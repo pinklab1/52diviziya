@@ -523,7 +523,7 @@ let currentSearch = '';
 async function loadData() {
   try {
     const [persons, units] = await Promise.all([
-      fetch(`${API}/persons?select=*,service_records(*,units(*))&order=last_name.asc,first_name.asc&limit=2000`)
+      fetch(`${API}/persons?select=*,service_records(*,units(*))&order=last_name.asc,first_name.asc&limit=2000`).then(r => r.json()),
       fetch(`${API}/units`).then(r => r.json()),
     ]);
     allPersons = persons;
