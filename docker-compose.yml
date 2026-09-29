@@ -31,22 +31,23 @@ services:
       PGRST_DB_SCHEMA:          public
       PGRST_DB_ANON_ROLE:       web_anon
       PGRST_OPENAPI_SERVER_PROXY_URI: https://${DOMAIN}/api
-      PGRST_DB_MAX_ROWS:        1000
+      # Персон в базе больше тысячи. Со старым лимитом часть из них
+      # просто не доезжала до сайта — список обрывался молча.
+      PGRST_DB_MAX_ROWS:        3000
     ports:
       - "127.0.0.1:3000:3000"
 
-  nocodb:
-    image: nocodb/nocodb:latest
+  # Панель для ручной правки данных. Раньше здесь стоял nocodb — он умеет
+  # больше, но тянет собственную базу, том и отдельный вход. Для «зайти,
+  # поправить фамилию» хватает adminer: один контейнер без состояния.
+  # Открыт только на localhost, снаружи ходит через nginx по admin.52sd.ru.
+  adminer:
+    image: adminer:latest
     container_name: 52diviziya_admin
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
-    environment:
-      NC_DB: "pg://db:5432?u=${POSTGRES_USER}&p=${POSTGRES_PASSWORD}&d=${POSTGRES_DB}"
-      NC_AUTH_JWT_SECRET: "change-this-to-random-string-12345"
-    volumes:
-      - nocodb_data:/usr/app/data
     ports:
       - "127.0.0.1:8080:8080"
 
@@ -64,9 +65,9 @@ services:
       - ./frontend:/var/www/html:ro
       - /var/52diviziya/photos:/var/www/photos:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
+      # Каталог, куда certbot кладёт файл проверки при продлении.
+      - /var/www/certbot:/var/www/certbot:ro
 
 volumes:
   pgdata:
-    driver: local
-  nocodb_data:
     driver: local
