@@ -440,6 +440,47 @@
     margin-top: 0.2rem;
   }
 
+  /* ── Награды ─────────────────────────────────────────────────────────
+   * Значок по виду награды: звезда Героя — золото, орден Славы — серебро
+   * со степенью. Награждён — закрашенный значок, представлен, но не
+   * награждён — только контур. */
+  .aw-icons { display: inline-flex; gap: 0.2rem; vertical-align: 0.05em; margin-left: 0.3rem; }
+  .aw-ico { display: inline-flex; align-items: center; gap: 1px; line-height: 1; }
+  .aw-ico svg { width: 0.95em; height: 0.95em; }
+  .aw-ico .deg { font-family: 'JetBrains Mono', monospace; font-size: 0.55em; color: var(--faded); }
+  .aw-hero { color: var(--gold); }
+  .aw-glory { color: #8a8f94; }
+  .aw-other { color: var(--rust); }
+  .aw-ico.nominated svg { fill: none; stroke: currentColor; stroke-width: 1.6; }
+  .aw-ico.awarded svg { fill: currentColor; stroke: none; }
+
+  .m-award {
+    display: flex; align-items: flex-start; gap: 0.6rem;
+    margin-bottom: 0.6rem; padding: 0.35rem 0.5rem; border-radius: 3px;
+  }
+  .m-award .aw-ico svg { width: 1.3rem; height: 1.3rem; }
+  .m-award .aw-ico .deg { display: none; }  /* степень и так в названии */
+  .m-award-title { font-family: 'PT Serif', serif; font-size: 0.95rem; color: var(--ink); line-height: 1.35; }
+  .m-award-status { font-family: 'PT Serif', serif; font-style: italic; font-size: 0.85rem; color: var(--faded); }
+  .m-award-doc {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.62rem; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--rust);
+  }
+  .m-award.has-doc { cursor: pointer; }
+  .m-award.has-doc:hover { background: var(--aged); }
+
+  /* Наградной лист поверх карточки человека */
+  .doc-viewer {
+    display: none; position: fixed; inset: 0; z-index: 200;
+    background: rgba(26,18,8,0.9); align-items: center; justify-content: center; padding: 2rem;
+  }
+  .doc-viewer.show { display: flex; }
+  .doc-viewer img { max-width: 100%; max-height: 100%; box-shadow: 0 10px 40px rgba(0,0,0,0.5); background: var(--cream); }
+  .doc-viewer-close {
+    position: absolute; top: 1rem; right: 1.3rem; background: none; border: none;
+    color: var(--aged); font-size: 2rem; cursor: pointer; line-height: 1;
+  }
+
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
   @keyframes slideUp {
     from { opacity: 0; transform: translateY(20px); }
@@ -524,6 +565,11 @@
 </div>
 
 <!-- Модалка -->
+<div class="doc-viewer" id="docViewer">
+  <button class="doc-viewer-close" id="docViewerClose" aria-label="Закрыть">×</button>
+  <img id="docViewerImg" alt="Наградной лист">
+</div>
+
 <div class="modal-backdrop" id="modal">
   <div class="modal">
     <button class="modal-close" id="modalClose">×</button>
@@ -542,7 +588,9 @@ let currentSearch = '';
 async function loadData() {
   try {
     const [persons, units] = await Promise.all([
-      fetch(`${API}/persons?select=*,service_records(*,units(*))&order=last_name.asc,first_name.asc&limit=2000`).then(r => r.json()),
+      // Без limit: потолок задаёт сервер (PGRST_DB_MAX_ROWS). С limit=2000
+      // после импорта кавалеров часть людей молча не доезжала бы до сайта.
+      fetch(`${API}/persons?select=*,service_records(*,units(*)),person_awards(*)&order=last_name.asc,first_name.asc`).then(r => r.json()),
       fetch(`${API}/units`).then(r => r.json()),
     ]);
     allPersons = persons;
@@ -616,7 +664,7 @@ function render() {
       <div class="card ${death ? 'killed' : ''}" data-id="${p.id}">
         ${death ? `<div class="card-death">${death}</div>` : ''}
         <div class="card-photo">${p.photo_url ? `<img src="${p.photo_url}" alt="${escapeHtml(fio)}" loading="lazy" onerror="this.parentElement.innerHTML='${initials}'">` : initials}</div>
-        <div class="card-name">${escapeHtml(fio)}</div>
+        <div class="card-name">${escapeHtml(fio)}${awardIcons(p)}</div>
         ${birth ? `<div class="card-birth">${birth} г.р.</div>` : ''}
         ${rank ? `<div class="card-rank">${escapeHtml(rank)}</div>` : ''}
         <div class="card-role">${escapeHtml(role)}</div>
@@ -657,16 +705,75 @@ function openModal(p) {
       ${birth ? `${birth} год рождения` : 'Год рождения неизвестен'}
       ${death ? ` · погиб ${death}` : ''}
     </div>
+    ${awardsSection(p)}
     <div class="m-section">
       <div class="m-section-title">Послужной список</div>
       ${services || '<div class="m-service"><div class="m-service-role">Сведения не сохранились</div></div>'}
     </div>
   `;
+  document.getElementById('modalContent').querySelectorAll('.m-award[data-doc]').forEach(el => {
+    el.addEventListener('click', () => openDoc(el.dataset.doc));
+  });
   document.getElementById('modal').classList.add('show');
 }
 
 function closeModal() {
   document.getElementById('modal').classList.remove('show');
+}
+
+// ── НАГРАДЫ ───────────────────────────────────────────────────────────
+// Вид награды → значок и порядок показа. Новые виды — сюда и в CHECK
+// таблицы person_awards (sql/migrations/004_person_awards.sql).
+const STAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6.2 6.8.8-5 4.6 1.4 6.7L12 17.4l-6.1 3.4 1.4-6.7-5-4.6 6.8-.8z"/></svg>';
+const AWARDS = {
+  hero_ussr:      { cls: 'aw-hero',  order: 0 },
+  order_of_glory: { cls: 'aw-glory', order: 1 },
+  other:          { cls: 'aw-other', order: 2 },
+};
+const ROMAN = { 1: 'I', 2: 'II', 3: 'III' };
+
+function sortedAwards(p) {
+  return (p.person_awards || []).slice().sort((a, b) =>
+    (AWARDS[a.kind] || AWARDS.other).order - (AWARDS[b.kind] || AWARDS.other).order
+    || (a.degree || 9) - (b.degree || 9));
+}
+
+function awardIcon(a) {
+  const kind = AWARDS[a.kind] || AWARDS.other;
+  const deg = a.degree ? `<span class="deg">${ROMAN[a.degree]}</span>` : '';
+  const status = a.status === 'nominated' ? 'nominated' : 'awarded';
+  const hint = a.title + (status === 'nominated' ? ' — представлен, не награждён' : '');
+  return `<span class="aw-ico ${kind.cls} ${status}" title="${escapeHtml(hint)}">${STAR}${deg}</span>`;
+}
+
+function awardIcons(p) {
+  const list = sortedAwards(p);
+  return list.length ? `<span class="aw-icons">${list.map(awardIcon).join('')}</span>` : '';
+}
+
+function awardsSection(p) {
+  const list = sortedAwards(p);
+  if (!list.length) return '';
+  const items = list.map(a => `
+    <div class="m-award ${a.document_url ? 'has-doc' : ''}" ${a.document_url ? `data-doc="${escapeHtml(a.document_url)}"` : ''}>
+      ${awardIcon(a)}
+      <div>
+        <div class="m-award-title">${escapeHtml(a.title)}</div>
+        ${a.status === 'nominated' ? '<div class="m-award-status">представлен, не награждён</div>' : ''}
+        ${a.note ? `<div class="m-award-status">${escapeHtml(a.note)}</div>` : ''}
+        ${a.document_url ? '<div class="m-award-doc">наградной лист →</div>' : ''}
+      </div>
+    </div>`).join('');
+  return `<div class="m-section"><div class="m-section-title">Награды</div>${items}</div>`;
+}
+
+function openDoc(url) {
+  document.getElementById('docViewerImg').src = url;
+  document.getElementById('docViewer').classList.add('show');
+}
+function closeDoc() {
+  document.getElementById('docViewer').classList.remove('show');
+  document.getElementById('docViewerImg').src = '';
 }
 
 // ── HELPERS ───────────────────────────────────────────────────────────
@@ -702,8 +809,14 @@ document.getElementById('modalClose').addEventListener('click', closeModal);
 document.getElementById('modal').addEventListener('click', e => {
   if (e.target.id === 'modal') closeModal();
 });
+document.getElementById('docViewerClose').addEventListener('click', closeDoc);
+document.getElementById('docViewer').addEventListener('click', e => {
+  if (e.target.id === 'docViewer') closeDoc();
+});
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeModal();
+  if (e.key !== 'Escape') return;
+  if (document.getElementById('docViewer').classList.contains('show')) closeDoc();
+  else closeModal();
 });
 
 loadData();
