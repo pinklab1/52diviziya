@@ -17,6 +17,11 @@ import_komsostav.py — сверка базы с новым списком «К�
    сверки с несколькими наградами. Награды пишутся в таблицу person_awards
    (миграция 004) и только добавляются: повторный импорт их не дублирует.
 
+   С версии 3 списка читается и лист «Рабочие_войны» — такие же люди, без
+   награды. Ответы автора берутся из «Решения», а если он ответил словами
+   в «Комментарии» — оттуда (author_answers.py). Коды строк листов кавалеров
+   после вставок в лист находятся заново по ФИО и году.
+
 2. Запись. Тот же скрипт с файлом, заполненным автором, и --apply:
    уточняет тех, кто есть, добавляет новых, объединяет подтверждённые
    дубли, удаляет то, что автор отметил «Удалить». Одной транзакцией.
@@ -53,6 +58,8 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill
 from openpyxl.worksheet.datavalidation import DataValidation
 
+import author_answers
+
 SOURCE_TAG = 'КОМСОСТАВ в-02'
 
 # ── Подразделения: код из списка → название строки в units ─────────────────
@@ -83,6 +90,7 @@ UNIT_ALIASES = {
     '106мсб':    '106осанб',
     '106омедб':  '106осанб',
     '106омснб':  '106осанб',
+    '106санб':   '106осанб',
     'управлениядивизии52сд': '52сд',
 }
 
@@ -98,6 +106,8 @@ PLAIN_REASONS = {'убит', 'убита', 'погиб', 'погибла', 'ум
 # «Командном составе» (COLS). Колонка «Вопрос №» на этих листах осталась от
 # шаблона и к их строкам не относится — не читаем.
 GLORY_SHEETS = {'Кавалеры_II': 2, 'Кавалеры_III': 3}
+# Листы с людьми без награды (с версии 3 списка): лист → префикс кода в сверке.
+PEOPLE_SHEETS = {'Рабочие_войны': 'W'}
 ROMAN = {1: 'I', 2: 'II', 3: 'III'}
 SRC_MAIN = 'Командный состав'
 
@@ -147,17 +157,21 @@ def load_list(path):
 
     for sheet, degree in GLORY_SHEETS.items():
         if sheet in wb.sheetnames:
-            rows += load_glory_sheet(wb[sheet], sheet, degree)
+            rows += load_extra_sheet(wb[sheet], sheet, f'G{degree}', [glory(degree, sheet)])
+    for sheet, prefix in PEOPLE_SHEETS.items():
+        if sheet in wb.sheetnames:
+            rows += load_extra_sheet(wb[sheet], sheet, prefix, [])
 
     _, questions = read_sheet(wb, 'Вопросы')
     _, spellings = read_sheet(wb, 'Написание ФИО')
     return rows, questions, spellings
 
 
-def load_glory_sheet(ws, sheet, degree):
-    """Кавалеры ордена Славы — те же колонки, что у командного состава.
-    Лист отформатирован на миллион строк, поэтому читаем до 300 пустых
-    подряд. Строки-разделители «А», «Б» (только буква) пропускаем."""
+def load_extra_sheet(ws, sheet, prefix, awards):
+    """Кавалеры ордена Славы, «Рабочие войны» — те же колонки, что у
+    командного состава. Лист отформатирован на миллион строк, поэтому читаем
+    до 300 пустых подряд. Строки-разделители «А», «Б» (только буква)
+    пропускаем."""
     rows, empty = [], 0
     for xl_row, values in enumerate(ws.iter_rows(min_row=2, values_only=True), 2):
         if not any(v not in (None, '') and str(v).strip() for v in values):
@@ -170,12 +184,12 @@ def load_glory_sheet(ws, sheet, degree):
              for col, key in COLS.items()}
         if not r['last'] or not (r['first'] or r['patr']):
             continue
-        r['xl_row'] = f'G{degree}_{xl_row}'   # код в сверке: RG3_45 — лист и строка
+        r['xl_row'] = f'{prefix}_{xl_row}'    # код в сверке: RG3_45 — лист и строка
         r['main'] = False                     # «Вопросы» относятся к основному листу
         r['orig_fio'] = fio(r)
         r['notes'] = []
         r['src'] = [sheet.replace('_', ' ')]
-        r['awards'] = [glory(degree, sheet)]
+        r['awards'] = list(awards)
         rows.append(r)
     return rows
 
@@ -592,6 +606,16 @@ def match(rows, persons):
     claimed = {}           # person id → строка списка
     result = {}            # xl_row → ('match'|'new'|'disputed', [кандидаты], почему)
 
+    # Строки из ответов автора уже знают своего человека (force_pid) или
+    # строку списка, к чьему человеку относятся (same_as).
+    by_id = {p['id']: p for p in persons}
+    for r in rows:
+        if r.get('force_pid'):
+            claimed.setdefault(r['force_pid'], r)
+            result[r['xl_row']] = ('match', [by_id[r['force_pid']]], None)
+    forced = [r for r in rows if r.get('force_pid') or r.get('same_as')]
+    rows = [r for r in rows if r not in forced]
+
     def candidates(r):
         found = {}
         for v in name_variants(r):
@@ -675,15 +699,45 @@ def match(rows, persons):
         else:
             result[r['xl_row']] = ('new', [], None)
 
+    for r in forced:
+        if r.get('same_as'):
+            kind, cands, _ = result[r['same_as']]
+            if kind != 'match':
+                raise SystemExit(f"Ответ автора к R{r['same_as']}: строка не сопоставлена с сайтом")
+            result[r['xl_row']] = ('match', cands, None)
+
     return result, claimed
 
 
 # ── План изменений ──────────────────────────────────────────────────────────
 
-def build_plan(rows, persons, records, units, decisions):
+def fix_same_person(r, p, fix):
+    """Поправки автора к «тому же человеку»: год, написание, «как на сайте»."""
+    if fix.get('base_name'):
+        r['last'], r['first'], r['patr'] = p['last_name'], p['first_name'], p['patronymic']
+    if fix.get('base_year') and year_of(p):
+        fix = dict(fix, year=year_of(p))
+    if fix.get('year'):
+        if (birth_of(r)[0] or '')[:4] != fix['year']:
+            r['birth'] = None
+        r['year'] = fix['year']
+    spelling = fix.get('spelling', '').split()
+    if len(spelling) >= 2:
+        r['last'], r['first'] = spelling[0], spelling[1]
+        r['patr'] = spelling[2] if len(spelling) > 2 else r['patr']
+    elif spelling:
+        # одно слово — заменяет самую похожую часть ФИО
+        part = max(('last', 'first', 'patr'),
+                   key=lambda f: ratio(letters(r[f]), letters(spelling[0])))
+        r[part] = spelling[0]
+
+
+def build_plan(rows, persons, records, units, decisions, fixes=None, comments=None):
     """План — по пункту на каждого человека из базы и из списка. Решение
     автора (decisions) уже учтено в сопоставлении; что из плана писать
-    в базу, решает apply_plan по тому же решению."""
+    в базу, решает apply_plan по тому же решению. fixes — поправки из
+    комментариев автора, comments — сами комментарии (для файла сверки)."""
+    fixes, comments = fixes or {}, comments or {}
     result, claimed = match(rows, persons)
     by_id = {p['id']: p for p in persons}
 
@@ -698,11 +752,16 @@ def build_plan(rows, persons, records, units, decisions):
             verdict = decisions.get(key)
             if verdict == 'Тот же человек' and p['id'] not in claimed:
                 claimed[p['id']] = r
+                fix_same_person(r, p, fixes.get(key, {}))
                 result[r['xl_row']] = ('match', [p], why)
+                # Код остаётся «R…-P…»: при следующей сверке решение
+                # «Тот же человек» найдёт ту же пару.
+                r['plan_key'] = key
                 used.add(key)
                 break
             if verdict == 'Новый человек':
                 result[r['xl_row']] = ('new', [], why)
+                r['plan_key'] = key
                 used.add(key)
                 break
 
@@ -713,6 +772,17 @@ def build_plan(rows, persons, records, units, decisions):
     plan = {'items': [], 'unit_notes': Counter(), 'missing_units': set(),
             'recs_by_person': recs_by_person}
     disputed_ids = set()
+
+    # «В списке дважды»: если на сайте есть только та строка пары, которую
+    # автор не оставил, оставленная строка уточняет этого человека, а не
+    # заводит нового (Беликов на сайте, автор оставил «Беляков»).
+    twins_in_list = list_twins([r for r in rows if not (r.get('force_pid') or r.get('same_as'))])
+    for a, b in twins_in_list:
+        verdict = decisions.get(f"R{a['xl_row']}-R{b['xl_row']}")
+        drop, keep = {'Оставить первую': (b, a), 'Оставить вторую': (a, b)}.get(verdict, (None, None))
+        if drop and result[drop['xl_row']][0] == 'match' and result[keep['xl_row']][0] == 'new':
+            p = result[drop['xl_row']][1][0]
+            result[keep['xl_row']] = ('match', [p], f'в списке дважды: оставлено «{fio(keep)}»')
 
     for r in rows:
         kind, cands, why = result[r['xl_row']]
@@ -750,7 +820,7 @@ def build_plan(rows, persons, records, units, decisions):
                 plan['items'].append(dict(base, kind='disputed', key=key, person=p,
                                           decision=decisions.get(key, default)))
             continue
-        key = f"R{r['xl_row']}"
+        key = r.get('plan_key') or f"R{r['xl_row']}"
         if kind == 'new':
             plan['items'].append(dict(base, kind='new', key=key, person=None,
                                       decision=decisions.get(key, 'Добавить')))
@@ -774,9 +844,11 @@ def build_plan(rows, persons, records, units, decisions):
 
         op = plan_record(p['id'], recs_by_person[p['id']], record, units)
         new_awards = [a for a in r['awards'] if award_key(a) not in p['award_keys']]
+        decision = decisions.get(key, 'Обновить')
+        if decision == 'Добавить':      # строка была новой, теперь нашёлся человек на сайте
+            decision = 'Обновить'
         plan['items'].append(dict(base, kind='match', key=key, person=p, changes=changes,
-                                  op=op, new_awards=new_awards,
-                                  decision=decisions.get(key, 'Обновить')))
+                                  op=op, new_awards=new_awards, decision=decision))
 
     # Кто есть только в базе. Среди них — старые дубли: тот же человек под
     # другим написанием уже сопоставлен со строкой списка.
@@ -788,18 +860,26 @@ def build_plan(rows, persons, records, units, decisions):
                      and not (year_of(p) and year_of(m) and year_of(p) != year_of(m))), None)
         if twin:
             key = f"P{p['id']}-P{twin['id']}"
+            # Двойник нашёлся только теперь (его пару дали ответы автора), а
+            # саму запись автор уже велел удалить — решение то же.
+            old = 'Удалить' if decisions.get(f"P{p['id']}") == 'Удалить' else ''
+            if old:
+                used.add(f"P{p['id']}")
             plan['items'].append({'kind': 'twin', 'key': key, 'person': p, 'twin': twin,
                                   'row': claimed[twin['id']],
-                                  'decision': decisions.get(key, '')})
+                                  'decision': decisions.get(key, old)})
         else:
             key = f"P{p['id']}"
             plan['items'].append({'kind': 'only_db', 'key': key, 'person': p, 'row': None,
                                   'decision': decisions.get(key, 'Оставить')})
 
-    for a, b in list_twins(rows):
+    for a, b in twins_in_list:
         key = f"R{a['xl_row']}-R{b['xl_row']}"
         plan['items'].append({'kind': 'list_twin', 'key': key, 'person': None, 'row': a,
                               'other': b, 'decision': decisions.get(key, '')})
+
+    for it in plan['items']:
+        it['comment'] = comments.get(it['key'], '')
 
     unused = set(decisions) - {i['key'] for i in plan['items']} - used
     if unused:
@@ -884,7 +964,7 @@ KINDS = {
     'new':      ('Новый — добавить в базу',             'E2EFDA', ['Добавить', 'Не добавлять']),
     'disputed': ('ПРОВЕРИТЬ: похож на человека в базе', 'FCE4D6',
                  ['Тот же человек', 'Новый человек', 'Не добавлять']),
-    'twin':     ('ПРОВЕРИТЬ: в базе дважды',            'FCE4D6', ['Объединить', 'Разные люди']),
+    'twin':     ('ПРОВЕРИТЬ: в базе дважды',            'FCE4D6', ['Объединить', 'Разные люди', 'Удалить']),
     'only_db':  ('Только в базе, в новом списке нет',   'EDEDED', ['Оставить', 'Удалить']),
     'list_twin': ('ПРОВЕРИТЬ: в списке дважды?',        'FCE4D6',
                   ['Оставить первую', 'Оставить вторую', 'Разные люди']),
@@ -983,7 +1063,7 @@ def write_sverka(plan, units, path):
         sort = norm(fio(it['row']) if it['row'] else p_fio(p))
         lines.append((sort, k, [it['key'], KINDS[k][0], src] + list_part
                       + [p_fio(p) if p else '', year_of(p) if p else '', service(p),
-                         note, it['decision'], '']))
+                         note, it['decision'], it.get('comment') or '']))
 
     lines.sort(key=lambda x: (x[0], x[2][0]))
     validations = {}
@@ -1038,21 +1118,157 @@ def write_sverka(plan, units, path):
     return counts
 
 
-def read_decisions(path):
+def kind_of_key(key, status):
+    """Тип строки сверки по коду: R…-P… спорный, P…-P… дубль в базе,
+    R…-R… дубль в списке, P… только в базе. Код надёжнее статуса: пара,
+    которую автор признал «тем же человеком», в новой сверке стоит как
+    «данные уточнятся», а код у неё прежний."""
+    if re.fullmatch(r'R[^-]+-P\d+', key):
+        return 'disputed'
+    if re.fullmatch(r'P\d+-P\d+', key):
+        return 'twin'
+    if re.fullmatch(r'R[^-]+-R[^-]+', key):
+        return 'list_twin'
+    if re.fullmatch(r'P\d+', key):
+        return 'only_db'
+    return 'new' if str(status or '').startswith('Новый') else 'match'
+
+
+def read_decisions(path, ranks=()):
+    """Решения автора: жёлтый столбец «Решение», а если автор ответил
+    словами в «Комментарии» — то, что сказано там (author_answers.py).
+    → решения, поправки, комментарии и ФИО/год строки списка по коду."""
+    empty = ({}, {}, {}, {})
     if not path:
-        return {}
+        return empty
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
-    out = {}
+    decisions, fixes, comments, info, errors = {}, {}, {}, {}, []
     rows = list(wb['Сверка'].iter_rows(values_only=True))
-    col = rows[0].index('Решение')
+    head = rows[0]
+    col, com, st = head.index('Решение'), head.index('Комментарий'), head.index('Статус')
+    name, year = head.index('ФИО в новом списке'), head.index('Год')
     for row in rows[1:]:
-        key, decision = row[0], clean(row[col])
-        if key and decision:
-            out[key] = decision
-    return out
+        key = row[0]
+        if not key:
+            continue
+        info[key] = (clean(row[name]), clean(row[year]))
+        decision = (clean(row[col]) or '').rstrip(':') or None
+        comment = clean(row[com])
+        if comment:
+            comments[key] = comment
+        if key in author_answers.ANSWERS:
+            decision, fix = author_answers.ANSWERS[key]
+            if fix:
+                fixes[key] = fix
+        elif comment:
+            try:
+                answer = author_answers.interpret(kind_of_key(key, row[st]), comment, ranks)
+            except ValueError as e:
+                errors.append(f'{key}: {e}')
+                continue
+            if answer:
+                decision, fix = answer
+                if fix:
+                    fixes[key] = fix
+        if decision:
+            decisions[key] = decision
+    if errors:
+        raise SystemExit('Ответы автора, которые скрипт не понял:\n  ' + '\n  '.join(errors))
+    return decisions, fixes, comments, info
+
+
+def rekey(tables, info, rows):
+    """Коды строк листов кавалеров — номер строки в листе. Автор вставляет
+    людей в середину листа, строки сдвигаются, и код из прошлой сверки
+    указывает на другого человека. Такие коды находим заново по ФИО и году."""
+    by_code = {f"R{r['xl_row']}": r for r in rows}
+    by_name = defaultdict(list)
+    for r in rows:
+        by_name[(str(r['xl_row']).split('_')[0], norm(fio(r)), birth_of(r)[1])].append(r)
+    moved, lost = {}, []
+    for key, (name, year) in info.items():
+        code = re.match(r'R[^-]+', key)
+        if not code or '_' not in code.group(0):
+            continue
+        code = code.group(0)
+        r = by_code.get(code)
+        if r and norm(fio(r)) == norm(name):
+            continue
+        found = by_name.get((code[1:].split('_')[0], norm(name), year), [])
+        if len(found) == 1:
+            moved[key] = f"R{found[0]['xl_row']}" + key[len(code):]
+        else:
+            lost.append(key)
+    for table in tables:
+        for old, new in moved.items():
+            if old in table:
+                table[new] = table.pop(old)
+    if moved:
+        print(f'Коды строк кавалеров сдвинулись в новом списке — найдены по ФИО: {len(moved)}')
+    if lost:
+        print(f'⚠ Не нашлись в новом списке (решение не перенесено): {lost}')
+    return moved
+
+
+def blank_row(**fields):
+    r = {key: None for key in COLS.values()}
+    r.update(main=False, notes=[], awards=[], src=['ответ автора'])
+    r.update(fields)
+    r['orig_fio'] = fio(r)
+    return r
+
+
+def author_rows(rows, persons, fixes):
+    """Поправки автора к строкам списка (ROW_FIXES) и новые строки из его
+    ответов: данные человека, который есть только на сайте («Оставить: ФИО,
+    год, звание…»), и вторая служба (EXTRA_ROWS)."""
+    by_code = {f"R{r['xl_row']}": r for r in rows}
+    for code, patch in author_answers.ROW_FIXES.items():
+        if code not in by_code:
+            raise SystemExit(f'Поправка автора к {code}: такой строки в списке нет')
+        by_code[code].update(patch)
+
+    extra = []
+    for code, patches in author_answers.EXTRA_ROWS.items():
+        base = by_code[code]
+        for i, patch in enumerate(patches, 1):
+            r = blank_row(last=base['last'], first=base['first'], patr=base['patr'],
+                          year=base['year'], birth=base['birth'], **patch)
+            r.update(xl_row=f"{base['xl_row']}+{i}", same_as=base['xl_row'],
+                     plan_key=f'{code}+{i}')
+            extra.append(r)
+
+    by_id = {p['id']: p for p in persons}
+    for key, fix in fixes.items():
+        data = fix.get('data')
+        if not data:
+            continue
+        data = dict(data, **author_answers.DATA_FIXES.get(key, {}))
+        p = by_id.get(int(key[1:]))
+        if p is None:
+            print(f'⚠ {key}: на сайте такого человека уже нет — ответ автора пропущен')
+            continue
+        words = data['name']
+        if len(words) >= 2 and not any(w.endswith('.') for w in words):
+            last, first, patr = words[0], words[1], ' '.join(words[2:]) or None
+        else:                       # «Варфоломеев У. И.» — инициалы, имя берём с сайта
+            last, first, patr = p['last_name'], p['first_name'], p['patronymic']
+        r = blank_row(last=last, first=first, patr=patr, year=data['year'],
+                      rank=data['rank'], role=data['role'], unit=data['unit'],
+                      fate=data['fate'], out_date=data['out_date'],
+                      out_reason=data['out_reason'])
+        r.update(xl_row=f'A{key}', force_pid=p['id'], plan_key=key)
+        extra.append(r)
+    return extra
 
 
 # ── Запись в базу ───────────────────────────────────────────────────────────
+
+def sheet_tags(r):
+    """Листы таблицы автора, где есть человек: «Командный состав»,
+    «Кавалеры III», «Рабочие войны». Строки из ответов автора листа не имеют."""
+    return [s for s in r['src'] if s != 'ответ автора']
+
 
 def apply_plan(db, plan, units, division_id):
     from psycopg2.extras import Json
@@ -1087,13 +1303,50 @@ def apply_plan(db, plan, units, division_id):
             cur.execute(f'UPDATE service_records SET {sets} WHERE id = %s',
                         list(values.values()) + [target['id']])
 
+    gone = set()
+
+    def merge(drop, keep):
+        """Запись drop — дубль keep: всё ценное переносится к keep, drop удаляется."""
+        # Пустая запись дубля в той же части ничего не добавляет.
+        cur.execute(r"""DELETE FROM service_records d
+                        WHERE d.person_id = %s
+                          AND coalesce(d.role, '') ~ '^[\s?—-]*$'
+                          AND EXISTS (SELECT 1 FROM service_records k
+                                       WHERE k.person_id = %s
+                                         AND k.unit_id IS NOT DISTINCT FROM d.unit_id)""",
+                    (drop, keep))
+        cur.execute('UPDATE service_records SET person_id = %s WHERE person_id = %s', (keep, drop))
+        cur.execute('UPDATE documents SET person_id = %s WHERE person_id = %s', (keep, drop))
+        cur.execute("""INSERT INTO person_awards
+                         (person_id, kind, degree, title, status, document_url, note, source)
+                       SELECT %s, kind, degree, title, status, document_url, note, source
+                         FROM person_awards WHERE person_id = %s
+                       ON CONFLICT (person_id, kind, coalesce(degree, 0), status) DO NOTHING""",
+                    (keep, drop))
+        cur.execute("""INSERT INTO person_events (person_id, event_id)
+                       SELECT %s, event_id FROM person_events WHERE person_id = %s
+                       ON CONFLICT DO NOTHING""", (keep, drop))
+        # Фото у дубля бывает, а у основной записи нет.
+        cur.execute("""UPDATE persons k SET
+                         photo_url = COALESCE(k.photo_url, d.photo_url),
+                         sources = (SELECT jsonb_agg(DISTINCT x)
+                                      FROM jsonb_array_elements(k.sources || d.sources) x),
+                         last_updated = NOW()
+                       FROM persons d WHERE k.id = %s AND d.id = %s""", (keep, drop))
+        cur.execute('DELETE FROM persons WHERE id = %s', (drop,))
+        gone.add(drop)
+
     # «В списке дважды»: строка, которую автор не оставил, в базу не идёт.
-    dropped = set()
+    dropped, list_pairs = set(), []
     for it in plan['items']:
         if it['kind'] == 'list_twin' and it['decision'] == 'Оставить первую':
             dropped.add(it['other']['xl_row'])
+            list_pairs.append((it['other']['xl_row'], it['row']['xl_row']))
         elif it['kind'] == 'list_twin' and it['decision'] == 'Оставить вторую':
             dropped.add(it['row']['xl_row'])
+            list_pairs.append((it['row']['xl_row'], it['other']['xl_row']))
+    matched_pid = {it['row']['xl_row']: it['person']['id'] for it in plan['items']
+                   if it['kind'] == 'match'}
 
     for it in plan['items']:
         kind, d, p = it['kind'], it['decision'], it['person']
@@ -1101,16 +1354,23 @@ def apply_plan(db, plan, units, division_id):
             done['строк-дублей пропущено'] += 1
             continue
 
+        if kind == 'match':
+            # Лист таблицы автора — даже при «Не обновлять»: по нему на сайте
+            # работает фильтр «Командный состав». Дописываем к тому, что уже
+            # есть: у человека может быть несколько строк в плане.
+            cur.execute("""UPDATE persons SET sources = coalesce(
+                             (SELECT jsonb_agg(DISTINCT x)
+                                FROM jsonb_array_elements(coalesce(sources, '[]') || %s) x),
+                             '[]')
+                           WHERE id = %s""",
+                        (Json(sheet_tags(it['row']) + ([SOURCE_TAG] if d != 'Не обновлять' else [])),
+                         p['id']))
         if kind == 'match' and d != 'Не обновлять':
-            sources = list(p['sources'])
-            if SOURCE_TAG not in sources:
-                sources.append(SOURCE_TAG)
             changes = it['changes']
-            sets = [f'{f} = %s' for f in changes] + ['sources = %s']
-            params = [new for _, new in changes.values()] + [Json(sources)]
             if changes:
-                sets.append('last_updated = NOW()')
-            cur.execute(f"UPDATE persons SET {', '.join(sets)} WHERE id = %s", params + [p['id']])
+                sets = [f'{f} = %s' for f in changes] + ['last_updated = NOW()']
+                params = [new for _, new in changes.values()]
+                cur.execute(f"UPDATE persons SET {', '.join(sets)} WHERE id = %s", params + [p['id']])
             op, target, rec = it['op']
             write_record(p['id'], op, target, rec)
             write_awards(p['id'], it['new_awards'])
@@ -1124,49 +1384,28 @@ def apply_plan(db, plan, units, division_id):
                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW()) RETURNING id""",
                         (pr['last_name'], pr['first_name'], pr['patronymic'], pr['birth_date'],
                          pr['death_date'], pr['outcome'], pr['outcome_details'],
-                         Json([SOURCE_TAG])))
+                         Json([SOURCE_TAG] + sheet_tags(it['row']))))
             new_id = cur.fetchone()[0]
             write_record(new_id, 'insert', None, it['record'])
             write_awards(new_id, it['awards'])
             done['добавлено'] += 1
 
-        elif kind == 'only_db' and d == 'Удалить':
+        elif kind in ('only_db', 'twin') and d == 'Удалить':
             # Записи о службе и связи с событиями уходят каскадом.
             cur.execute('DELETE FROM persons WHERE id = %s', (p['id'],))
             done['удалено'] += 1
 
         elif kind == 'twin' and d == 'Объединить':
-            keep = it['twin']['id']
-            # Пустая запись дубля в той же части ничего не добавляет.
-            cur.execute(r"""DELETE FROM service_records d
-                            WHERE d.person_id = %s
-                              AND coalesce(d.role, '') ~ '^[\s?—-]*$'
-                              AND EXISTS (SELECT 1 FROM service_records k
-                                           WHERE k.person_id = %s
-                                             AND k.unit_id IS NOT DISTINCT FROM d.unit_id)""",
-                        (p['id'], keep))
-            cur.execute('UPDATE service_records SET person_id = %s WHERE person_id = %s',
-                        (keep, p['id']))
-            cur.execute('UPDATE documents SET person_id = %s WHERE person_id = %s',
-                        (keep, p['id']))
-            cur.execute("""INSERT INTO person_awards
-                             (person_id, kind, degree, title, status, document_url, note, source)
-                           SELECT %s, kind, degree, title, status, document_url, note, source
-                             FROM person_awards WHERE person_id = %s
-                           ON CONFLICT (person_id, kind, coalesce(degree, 0), status) DO NOTHING""",
-                        (keep, p['id']))
-            cur.execute("""INSERT INTO person_events (person_id, event_id)
-                           SELECT %s, event_id FROM person_events WHERE person_id = %s
-                           ON CONFLICT DO NOTHING""", (keep, p['id']))
-            # Фото у дубля бывает, а у основной записи нет.
-            cur.execute("""UPDATE persons k SET
-                             photo_url = COALESCE(k.photo_url, d.photo_url),
-                             sources = (SELECT jsonb_agg(DISTINCT x)
-                                          FROM jsonb_array_elements(k.sources || d.sources) x),
-                             last_updated = NOW()
-                           FROM persons d WHERE k.id = %s AND d.id = %s""", (keep, p['id']))
-            cur.execute('DELETE FROM persons WHERE id = %s', (p['id'],))
+            merge(p['id'], it['twin']['id'])
             done['объединено'] += 1
+
+    # Обе строки пары «в списке дважды» были на сайте двумя записями — раз
+    # автор сказал, что это один человек, сливаем и записи на сайте.
+    for drop_row, keep_row in list_pairs:
+        drop, keep = matched_pid.get(drop_row), matched_pid.get(keep_row)
+        if drop and keep and drop != keep and drop not in gone and keep not in gone:
+            merge(drop, keep)
+            done['объединено (дважды в списке)'] += 1
 
     db.commit()
     cur.close()
@@ -1207,7 +1446,13 @@ def main():
         persons, records, units, division_id = load_from_db(db.cursor())
     print(f'Персон в базе: {len(persons)}')
 
-    plan = build_plan(rows, persons, records, units, read_decisions(args.decisions))
+    ranks = {r['rank'] for r in rows if r['rank']}
+    decisions, fixes, comments, info = read_decisions(args.decisions, ranks)
+    rekey((decisions, fixes, comments), info, rows)
+    extra = author_rows(rows, persons, fixes)
+    if extra:
+        print(f'Строк из ответов автора: {len(extra)}')
+    plan = build_plan(rows + extra, persons, records, units, decisions, fixes, comments)
     counts = write_sverka(plan, units, args.sverka)
     for k, (label, _, _) in KINDS.items():
         print(f'  {label:<40} {counts.get(k, 0)}')

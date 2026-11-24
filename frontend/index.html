@@ -542,8 +542,13 @@
            placeholder="Фамилия, должность, подразделение, звание...">
     <button class="search-btn" id="searchBtn">Найти</button>
   </div>
-  <div class="filters">
-    <button class="filter active" data-unit="">Все</button>
+  <div class="filters" id="groupFilters">
+    <button class="filter active" data-group="">Все</button>
+    <button class="filter" data-group="komsostav">Командный состав</button>
+    <button class="filter" data-group="glory">Кавалеры ордена Славы</button>
+  </div>
+  <div class="filters" id="unitFilters">
+    <button class="filter active" data-unit="">Все части</button>
     <button class="filter" data-unit="429">429-й СП</button>
     <button class="filter" data-unit="431">431-й СП</button>
     <button class="filter" data-unit="439">439-й СП</button>
@@ -582,7 +587,15 @@ const API = '/api';
 let allPersons = [];
 let allUnits = [];
 let currentUnit = '';
+let currentGroup = '';
 let currentSearch = '';
+
+// Разделы списка автора. «Командный состав» — лист таблицы, откуда человек
+// (пишется в persons.sources при импорте); кавалеры — по наградам.
+const GROUPS = {
+  komsostav: p => (p.sources || []).includes('Командный состав'),
+  glory: p => (p.person_awards || []).some(a => a.kind === 'order_of_glory'),
+};
 
 // ── ЗАГРУЗКА ──────────────────────────────────────────────────────────
 async function loadData() {
@@ -615,6 +628,7 @@ function updateStats() {
 function filter() {
   const q = currentSearch.toLowerCase().trim();
   return allPersons.filter(p => {
+    if (currentGroup && !GROUPS[currentGroup](p)) return false;
     // фильтр по подразделению
     if (currentUnit) {
       const inUnit = (p.service_records || []).some(sr =>
@@ -797,12 +811,16 @@ document.getElementById('search').addEventListener('input', e => {
   currentSearch = e.target.value;
   render();
 });
-document.querySelectorAll('.filter').forEach(b => {
-  b.addEventListener('click', () => {
-    document.querySelectorAll('.filter').forEach(x => x.classList.remove('active'));
-    b.classList.add('active');
-    currentUnit = b.dataset.unit;
-    render();
+// Два ряда фильтров независимы: раздел и часть складываются.
+document.querySelectorAll('.filters').forEach(row => {
+  row.querySelectorAll('.filter').forEach(b => {
+    b.addEventListener('click', () => {
+      row.querySelectorAll('.filter').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      if ('group' in b.dataset) currentGroup = b.dataset.group;
+      else currentUnit = b.dataset.unit;
+      render();
+    });
   });
 });
 document.getElementById('modalClose').addEventListener('click', closeModal);
