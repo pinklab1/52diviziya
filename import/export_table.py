@@ -42,6 +42,18 @@ COLUMNS = [  # (заголовок, ширина)
 ]
 
 
+TABLE_NAME = 'Общая_таблица_52сд-в-{:02d}.xlsx'
+
+
+def next_version(folder):
+    """Каждая выгрузка — новая версия с порядковым номером (просьба
+    пользователя 24.11.2026): старые таблицы не перезаписываются."""
+    import os
+    used = [int(m.group(1)) for f in os.listdir(folder)
+            if (m := re.fullmatch(r'Общая_таблица_52сд-в-(\d+)\.xlsx', f))]
+    return os.path.join(folder, TABLE_NAME.format(max(used, default=0) + 1))
+
+
 def ru_date(iso):
     if not iso:
         return None
@@ -101,8 +113,13 @@ def main():
     ap = argparse.ArgumentParser(description='Общая таблица Excel из базы сайта')
     ap.add_argument('--dump', required=True, help='дамп базы (.sql.gz)')
     ap.add_argument('--list', help='таблица автора — для национальности')
-    ap.add_argument('--out', required=True)
+    out = ap.add_mutually_exclusive_group(required=True)
+    out.add_argument('--out', help='файл таблицы')
+    out.add_argument('--out-dir', help='папка: таблица сохранится следующей версией '
+                                      '«Общая_таблица_52сд-в-NN.xlsx», старые не трогаются')
     args = ap.parse_args()
+    if args.out_dir:
+        args.out = next_version(args.out_dir)
 
     tables = {}
     import gzip
