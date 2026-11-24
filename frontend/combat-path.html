@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Боевой путь — 52-я стрелковая дивизия</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<meta name="theme-color" content="#1a1208">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -43,6 +48,11 @@
     padding: 1.5rem 2rem 1.2rem;
     position: relative;
     border-bottom: 3px double var(--gold);
+  }
+  .brand { display: flex; align-items: center; gap: 1rem; }
+  .emblem {
+    width: auto; height: 64px; flex: none;
+    filter: drop-shadow(0 2px 6px rgba(0,0,0,0.5));
   }
   .header-inner {
     max-width: 1400px;
@@ -362,9 +372,13 @@
 
 <header>
   <div class="header-inner">
-    <div>
-      <div class="kicker">52-я стрелковая дивизия · 1941–1945</div>
-      <h1>Боевой <em>путь</em></h1>
+    <div class="brand">
+      <img class="emblem" src="/emblem.png" width="216" height="260"
+           alt="Знак 52-й стрелковой Шумлинско-Венской дивизии">
+      <div>
+        <div class="kicker">52-я стрелковая дивизия · 1941–1945</div>
+        <h1>Боевой <em>путь</em></h1>
+      </div>
     </div>
     <nav>
       <a href="/">Архив персоналий</a>

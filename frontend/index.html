@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>52-я стрелковая дивизия — Архив</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<meta name="theme-color" content="#1a1208">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -78,6 +83,15 @@
     font-style: italic;
     color: var(--gold);
     font-weight: 400;
+  }
+  .brand { display: flex; align-items: center; gap: 1.2rem; }
+  .emblem {
+    width: auto; height: 104px; flex: none;
+    filter: drop-shadow(0 2px 6px rgba(0,0,0,0.5));
+  }
+  @media (max-width: 600px) {
+    .brand { gap: 0.8rem; }
+    .emblem { height: 68px; }
   }
   .header-sub {
     margin-top: 0.7rem;
@@ -503,10 +517,14 @@
 
 <header>
   <div class="header-inner" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:1rem;">
-    <div>
-      <div class="kicker">РККА · Великая Отечественная война · 1941–1945</div>
-      <h1>52-я стрелковая <em>дивизия</em></h1>
-      <div class="header-sub">Архив командного и личного состава</div>
+    <div class="brand">
+      <img class="emblem" src="/emblem.png" width="216" height="260"
+           alt="Знак 52-й стрелковой Шумлинско-Венской дивизии">
+      <div>
+        <div class="kicker">РККА · Великая Отечественная война · 1941–1945</div>
+        <h1>52-я стрелковая <em>дивизия</em></h1>
+        <div class="header-sub">Архив командного и личного состава</div>
+      </div>
     </div>
     <nav style="display:flex;gap:0.4rem;">
       <a href="/" class="nav-link active">Архив персоналий</a>
