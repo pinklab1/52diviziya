@@ -925,11 +925,20 @@ def plan_record(person_id, existing, record, units):
         target = same_unit[0]
     if target is None and not same_unit and no_unit:
         target = no_unit[0]
+    if target is None and record['role']:
+        # Совсем пустая запись (ни звания, ни должности — только часть из
+        # списка потерь): её заполняем данными таблицы автора, часть тоже.
+        # Иначе рядом с новой осталась бы пустая, и карточка могла бы
+        # показать её (Литвиненко, Метлов — ноябрь 2026).
+        target = next((s for s in existing if not s['rank'] and not stems(s['role'])), None)
     if target is None:
         return ('insert', existing, record)
     diff = {}
     if record['unit'] and target['unit_id'] is None:
         diff['unit'] = (None, record['unit'])
+    elif record['unit'] and unit_id and target['unit_id'] != unit_id:
+        old = next((n for n, i in units.items() if i == target['unit_id']), None)
+        diff['unit'] = (old, record['unit'])
     for field in ('rank', 'role', 'date_to', 'end_reason', 'note'):
         new = record[field]
         # «не установлено» — ответ на пустую клетку списка; то, что
@@ -1421,6 +1430,8 @@ def main():
     ap.add_argument('--sverka', default='sverka_komsostav.xlsx', help='куда записать файл сверки')
     ap.add_argument('--decisions', help='файл сверки с решениями автора')
     ap.add_argument('--apply', action='store_true', help='записать изменения в базу')
+    ap.add_argument('--only', help='записать только эти коды сверки, через запятую '
+                                   '(точечная правка после полной записи)')
     args = ap.parse_args()
 
     if args.apply and args.dump:
@@ -1458,6 +1469,20 @@ def main():
         print(f'  {label:<40} {counts.get(k, 0)}')
     print(f'Сверка: {args.sverka}')
 
+    if args.only:
+        only = {k.strip() for k in args.only.split(',') if k.strip()}
+        items = [it for it in plan['items'] if it['key'] in only]
+        missing = only - {it['key'] for it in items}
+        if missing:
+            sys.exit(f'--only: таких кодов в плане нет: {sorted(missing)}')
+        # Только обновления найденных людей: ни добавлений, ни удалений,
+        # ни слияний — остальное уже записано полной записью.
+        bad = [it['key'] for it in items if it['kind'] != 'match']
+        if bad:
+            sys.exit(f'--only годится только для «Есть в базе»: {bad}')
+        plan = dict(plan, items=items, missing_units=set())
+        for it in items:
+            print(f"  {it['key']} {fio(it['row'])}: {what_changes(it) or 'без изменений'}")
     if args.apply:
         done = apply_plan(db, plan, units, division_id)
         print('✓ Записано в базу:', ', '.join(f'{k} {v}' for k, v in done.items()))

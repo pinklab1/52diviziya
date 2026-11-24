@@ -564,7 +564,10 @@
   </div>
   <div class="filters" id="groupFilters">
     <button class="filter active" data-group="">Все</button>
-    <button class="filter" data-group="komsostav">Командный состав</button>
+    <button class="filter" data-group="Командный">Командный состав</button>
+    <button class="filter" data-group="Политический">Политический состав</button>
+    <button class="filter" data-group="Сержантский">Сержантский состав</button>
+    <button class="filter" data-group="Рядовой">Рядовой состав</button>
     <button class="filter" data-group="glory">Кавалеры ордена Славы</button>
   </div>
   <div class="filters" id="unitFilters">
@@ -610,12 +613,41 @@ let currentUnit = '';
 let currentGroup = '';
 let currentSearch = '';
 
-// Разделы списка автора. «Командный состав» — лист таблицы, откуда человек
-// (пишется в persons.sources при импорте); кавалеры — по наградам.
-const GROUPS = {
-  komsostav: p => (p.sources || []).includes('Командный состав'),
-  glory: p => (p.person_awards || []).some(a => a.kind === 'order_of_glory'),
-};
+// Состав: командный, политический, сержантский, рядовой — не пересекаются.
+// Те же правила, что в import/composition.py (общая таблица Excel):
+// политработники после осени 1942 носят обычные звания, поэтому
+// политический состав виден и по должности — при любом звании; обслуга
+// политотдела (машинистка, автоматчик, ординарец) — по своему званию.
+const POLIT_RANK = /политрук|комиссар|замполитрука/;
+const POLIT_STAFF = /^(секретарь-машинистка|машинистка|автоматчик|ординарец|шофер|шофёр|водитель|писарь|повар|связной|посыльный|переводчик|фотограф)/;
+const POLIT_ROLE = /замполит|по политической|политрук|военком|комиссар|парторг|партийный организатор|комсорг|комсомольский организатор|агитатор|пропагандист|политотдел|политического отдела|политработник/;
+const OFFICER_RANK = /генерал|полковник|майор|капитан|лейтенант|военврач|военфельдшер|ветфельдшер|военинженер|воентехник|интендант|техник/;
+const OFFICER_ROLE = /^(командир (взвода|роты|батальона|дивизиона|батареи|полка)|начальник|офицер|адъютант|помощник начальника штаба)/;
+
+function recordComposition(sr) {
+  const rank = (sr.rank || '').toLowerCase(), role = (sr.role || '').toLowerCase().trim();
+  const officer = OFFICER_RANK.test(rank) || (!rank && OFFICER_ROLE.test(role));
+  if (POLIT_RANK.test(rank) || (POLIT_ROLE.test(role) && !POLIT_STAFF.test(role))) return 'Политический';
+  if (officer) return 'Командный';
+  if (/сержант|старшина/.test(rank)) return 'Сержантский';
+  if (/красноармеец|ефрейтор|рядов/.test(rank)) return 'Рядовой';
+  return null;
+}
+
+function composition(p) {
+  if (p._composition === undefined) {
+    const found = new Set((p.service_records || []).map(recordComposition));
+    p._composition = ['Политический', 'Командный', 'Сержантский', 'Рядовой']
+      .find(c => found.has(c)) || null;
+  }
+  return p._composition;
+}
+
+// Кнопки верхнего ряда: состав или кавалеры (по наградам).
+function inGroup(p, group) {
+  if (group === 'glory') return (p.person_awards || []).some(a => a.kind === 'order_of_glory');
+  return composition(p) === group;
+}
 
 // ── ЗАГРУЗКА ──────────────────────────────────────────────────────────
 async function loadData() {
@@ -648,7 +680,7 @@ function updateStats() {
 function filter() {
   const q = currentSearch.toLowerCase().trim();
   return allPersons.filter(p => {
-    if (currentGroup && !GROUPS[currentGroup](p)) return false;
+    if (currentGroup && !inGroup(p, currentGroup)) return false;
     // фильтр по подразделению
     if (currentUnit) {
       const inUnit = (p.service_records || []).some(sr =>

@@ -4,8 +4,10 @@ export_table.py — общая таблица Excel: все люди сайта,
 Решено 24.11.2026: вместо листов автора и сверки по ФИО — одна таблица,
 выгруженная из базы. У каждой строки «Код» — номер человека на сайте
 (persons.id): по нему правки автора ложатся на нужного человека без
-угадывания по фамилии. Новых автор вносит строками без кода, с пометкой
-в столбце «Раздел».
+угадывания по фамилии. Новых автор вносит строками без кода, с пометкой.
+
+«Состав» — командный, политический, сержантский или рядовой
+(composition.py, те же правила, что у фильтров сайта).
 
 Национальности в базе нет — она берётся из таблицы автора (--list), где
 человек находится тем же сопоставлением, что в import_komsostav.py.
@@ -24,16 +26,14 @@ import openpyxl
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.worksheet.datavalidation import DataValidation
 
+import composition
 import import_komsostav as ik
 
 # Часть — так, как пишет автор: «429 сп», «1028 ап».
 UNIT_SHORT = {name: re.sub(r'^(\d+)', r'\1 ', code) for code, name in ik.UNIT_NAMES.items()}
 
-SECTIONS = ['Командный состав', 'Кавалер Славы II ст.', 'Кавалер Славы III ст.',
-            'Рабочие войны', 'Прочие (с сайта)']
-
 COLUMNS = [  # (заголовок, ширина)
-    ('Код', 7), ('Раздел', 22), ('Фамилия', 16), ('Имя', 13), ('Отчество', 16),
+    ('Код', 7), ('Состав', 14), ('Фамилия', 16), ('Имя', 13), ('Отчество', 16),
     ('Дата рождения', 12), ('Год рождения', 8), ('Национальность', 12),
     ('Звание', 18), ('Должность', 40), ('Часть', 9),
     ('Дата выбытия', 12), ('Причина выбытия', 22), ('Судьба', 16), ('Подробности судьбы', 28),
@@ -47,18 +47,6 @@ def ru_date(iso):
         return None
     y, m, d = iso[:10].split('-')
     return f'{d}.{m}.{y}'
-
-
-def sections(p, awards):
-    out = []
-    if 'Командный состав' in p['sources']:
-        out.append('Командный состав')
-    for degree in (2, 3):
-        if any(a['kind'] == 'order_of_glory' and str(a['degree']) == str(degree) for a in awards):
-            out.append(f'Кавалер Славы {"II" if degree == 2 else "III"} ст.')
-    if 'Рабочие войны' in p['sources']:
-        out.append('Рабочие войны')
-    return ', '.join(out) or 'Прочие (с сайта)'
 
 
 def fate(p):
@@ -156,7 +144,7 @@ def main():
         birth = p['birth_date']
         unit = unit_by_id.get(main_s.get('unit_id'))
         ws.append([
-            p['id'], sections(p, aw), p['last_name'], p['first_name'], p['patronymic'],
+            p['id'], composition.of_person(recs[p['id']]), p['last_name'], p['first_name'], p['patronymic'],
             ru_date(birth) if birth and not birth.endswith('-01-01') else None,
             int(birth[:4]) if birth else None,
             nat.get(p['id']),
@@ -186,7 +174,7 @@ def main():
         ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
     ws.freeze_panes = 'C2'
     ws.auto_filter.ref = ws.dimensions
-    dv = DataValidation(type='list', formula1='"' + ','.join(SECTIONS) + '"',
+    dv = DataValidation(type='list', formula1='"' + ','.join(composition.COMPOSITIONS) + '"',
                         allow_blank=True, showErrorMessage=False)
     ws.add_data_validation(dv)
     dv.add(f'B2:B{n + 2000}')                   # и для новых строк ниже
@@ -199,19 +187,24 @@ def main():
         ('Как пользоваться', True),
         ('1. Одна строка — один человек. Править прямо в клетках: ФИО, год, звание, должность, часть, судьба…', False),
         ('2. Серый столбец «Код» — номер человека на сайте. НЕ МЕНЯТЬ И НЕ УДАЛЯТЬ: по нему правка попадает к нужному человеку.', False),
-        ('3. Новый человек — новая строка в конце листа, «Код» пустой. В «Разделе» выбрать, куда он относится.', False),
+        ('3. Новый человек — новая строка в конце листа, «Код» пустой; в «Пометке» — «новый».', False),
         ('4. Жёлтый столбец «Пометка» — для слов: «новый», «удалить», «дубль кода 123», «проверить», любые пояснения.', False),
         ('5. Строки не удалять — вместо этого написать «удалить» в «Пометке».', False),
         ('6. «Другие службы» — если у человека несколько должностей: основная — в столбцах «Звание/Должность/Часть», остальные здесь. Исправления к ним — словами в «Пометке».', False),
         ('7. «Награды» и «Фото» — для сведения; заводятся на сайте отдельно.', False),
         ('', False),
-        ('Разделы', True),
+        ('Состав', True),
+        ('Командный, политический, сержантский или рядовой — считается по званию и должности. '
+         'Политический: политрук, комиссар, замполитрука, а также офицер на политической должности '
+         '(замполит, парторг, комсорг, военком, агитатор, политотдел). Составы не пересекаются. '
+         'Если состав определён неверно или пуст — исправьте прямо в клетке.', False),
+        ('', False),
     ]
     counts = defaultdict(int)
     for row in ws.iter_rows(min_row=2, values_only=True):
-        for s in row[1].split(', '):
-            counts[s] += 1
-    text += [(f'{s}: {counts.get(s, 0)}', False) for s in SECTIONS]
+        counts[row[1] or 'не определён'] += 1
+    keys = composition.COMPOSITIONS + ['не определён']
+    text += [(f'{s}: {counts.get(s, 0)}', False) for s in keys]
     for line, bold in text:
         info.append([line])
         if bold:
@@ -220,7 +213,7 @@ def main():
 
     wb.save(args.out)
     print(f'Людей: {n - 1}; с национальностью: {len(nat)}; файл: {args.out}')
-    for s in SECTIONS:
+    for s in keys:
         print(f'  {s}: {counts.get(s, 0)}')
 
 
