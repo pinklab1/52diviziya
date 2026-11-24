@@ -317,6 +317,8 @@
     color: var(--faded);
     font-style: italic;
   }
+  .empty-what { font-style: normal; color: var(--ink); }
+  .empty .filter { margin-top: 1.2rem; font-style: normal; }
   .loading::after {
     content: '⋯';
     animation: pulse 1.4s ease infinite;
@@ -556,7 +558,7 @@
     <button class="filter" data-unit="52">Штаб дивизии</button>
     <button class="filter" data-unit="164">164-й сапбат</button>
     <button class="filter" data-unit="405">405-й ИПТД</button>
-    <button class="filter" data-unit="106">106</button>
+    <button class="filter" data-unit="106">106-й санбат</button>
   </div>
 </div>
 
@@ -652,6 +654,28 @@ function filter() {
   });
 }
 
+// Пустой результат: называем, какие условия сработали вместе, — фильтры
+// раздела и части складываются, и «Кавалеры» + «106-й санбат» дают ноль.
+function emptyMessage() {
+  const active = [...document.querySelectorAll('.filters .filter.active')]
+    .filter(b => b.dataset.group || b.dataset.unit)
+    .map(b => b.textContent.trim());
+  if (currentSearch.trim()) active.push(`«${currentSearch.trim()}»`);
+  const what = active.length
+    ? `Никого не нашлось: <span class="empty-what">${active.map(escapeHtml).join(' + ')}</span>`
+    : 'По запросу ничего не найдено';
+  return `<div class="empty">${what}<br>
+    <button class="filter" id="resetFilters">Сбросить фильтры</button></div>`;
+}
+
+function resetFilters() {
+  document.querySelectorAll('.filters').forEach(row =>
+    row.querySelectorAll('.filter').forEach((b, i) => b.classList.toggle('active', i === 0)));
+  currentGroup = currentUnit = currentSearch = '';
+  document.getElementById('search').value = '';
+  render();
+}
+
 // ── РЕНДЕР ────────────────────────────────────────────────────────────
 function render() {
   const list = filter();
@@ -660,7 +684,8 @@ function render() {
     `Найдено: ${list.length}`;
 
   if (list.length === 0) {
-    grid.innerHTML = '<div class="empty">По запросу ничего не найдено</div>';
+    grid.innerHTML = emptyMessage();
+    document.getElementById('resetFilters').addEventListener('click', resetFilters);
     return;
   }
 
