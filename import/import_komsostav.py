@@ -412,6 +412,12 @@ def birth_of(r):
     if full:
         return full, full[:4]
     year = r['year'] if r['year'] and re.fullmatch(r'\d{4}', r['year']) else None
+    if not year and r['birth']:
+        # На листах кавалеров и «Рабочих войны» год стоит числом прямо в
+        # «Дате рождения» («1925»), а «Год рождения» пуст; бывает и
+        # «__.__.1920». Без этого у 645 человек год терялся (ноябрь 2026).
+        m = re.fullmatch(r'(?:[_\d]{1,2}\.){0,2}(1[89]\d\d)', r['birth'].strip())
+        year = m.group(1) if m else None
     return (f'{year}-01-01' if year else None), year
 
 
@@ -1460,6 +1466,8 @@ def main():
     ap.add_argument('--apply', action='store_true', help='записать изменения в базу')
     ap.add_argument('--only', help='записать только эти коды сверки, через запятую '
                                    '(точечная правка после полной записи)')
+    ap.add_argument('--fill-birth', action='store_true',
+                    help='записать только год/дату рождения тем, у кого на сайте он пуст')
     args = ap.parse_args()
 
     if args.apply and args.dump:
@@ -1511,6 +1519,30 @@ def main():
         plan = dict(plan, items=items, missing_units=set())
         for it in items:
             print(f"  {it['key']} {fio(it['row'])}: {what_changes(it) or 'без изменений'}")
+    if args.fill_birth:
+        # Только пустые годы рождения у найденных на сайте людей — ни
+        # других полей, ни добавлений, ни удалений.
+        fill = {}
+        for it in plan['items']:
+            # «Не обновлять» не мешает: пустой год заполняется, ничего не затирая.
+            if it['kind'] != 'match':
+                continue
+            old, new = it['changes'].get('birth_date', (None, None))
+            if old is None and new and it['person']['id'] not in fill:
+                fill[it['person']['id']] = (new, fio(it['row']))
+        print(f'Год рождения появится у {len(fill)} человек; примеры:')
+        for pid, (d, name) in list(fill.items())[:8]:
+            print(f'  {pid} {name}: {ru("birth_date", d)}')
+        if args.apply:
+            cur = db.cursor()
+            for pid, (d, _) in fill.items():
+                cur.execute('UPDATE persons SET birth_date = %s, last_updated = NOW() '
+                            'WHERE id = %s AND birth_date IS NULL', (d, pid))
+            db.commit()
+            print(f'✓ Записано в базу: год рождения у {len(fill)}')
+        if db:
+            db.close()
+        return
     if args.apply:
         done = apply_plan(db, plan, units, division_id)
         print('✓ Записано в базу:', ', '.join(f'{k} {v}' for k, v in done.items()))
