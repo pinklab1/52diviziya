@@ -481,13 +481,14 @@
   /* В карточке: фото и ордена в одном ряду, орден крупно, подпись под ним. */
   .m-top { display: flex; align-items: flex-start; gap: 1.2rem; flex-wrap: wrap; margin-bottom: 1rem; }
   .m-top .m-photo { margin-bottom: 0; flex: none; }
-  .m-awards { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-start; }
+  /* Полный кавалер — три ордена: должны встать в ряд с фото. */
+  .m-awards { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: flex-start; }
   .m-award {
-    width: 120px; text-align: center;
-    padding: 0.4rem 0.3rem; border-radius: 3px;
+    width: 104px; text-align: center;
+    padding: 0.4rem 0.2rem; border-radius: 3px;
   }
-  .m-award-img { height: 110px; display: flex; align-items: center; justify-content: center; }
-  .m-award-img img { max-height: 110px; max-width: 110px; object-fit: contain; }
+  .m-award-img { height: 96px; display: flex; align-items: center; justify-content: center; }
+  .m-award-img img { max-height: 96px; max-width: 96px; object-fit: contain; }
   .m-award .aw-ico svg { width: 84px; height: 84px; }
   .m-award-title { font-family: 'PT Serif', serif; font-size: 0.85rem; color: var(--ink); line-height: 1.3; margin-top: 0.4rem; }
   .m-award-status { font-family: 'PT Serif', serif; font-style: italic; font-size: 0.8rem; color: var(--faded); }
