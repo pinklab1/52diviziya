@@ -147,6 +147,11 @@ def main():
     for a in tables.get('person_awards', []):
         awards[int(a['person_id'])].append(a)
     photo = {int(p['id']): p['photo_url'] for p in tables['persons']}
+    tables_fate = {int(p['id']): p.get('fate_text') for p in tables['persons']}
+    # date_to_text есть только в дампах после миграции 005
+    date_text = {int(s['id']): s.get('date_to_text') for s in tables['service_records']}
+    for s in records:
+        s['date_to_text'] = date_text.get(s['id'])
     nat = nationalities(args.list, persons) if args.list else {}
 
     wb = openpyxl.Workbook()
@@ -166,8 +171,10 @@ def main():
             int(birth[:4]) if birth else None,
             nat.get(p['id']),
             main_s.get('rank'), main_s.get('role'), UNIT_SHORT.get(unit, unit),
-            ru_date(main_s.get('date_to')), main_s.get('end_reason'),
-            fate(p), p['outcome_details'],
+            # неполная дата («__.08.1942») — как в документе
+            ru_date(main_s.get('date_to')) or main_s.get('date_to_text'), main_s.get('end_reason'),
+            # судьба словами автора, если есть («погибла», «погиб (в штрафбате)»)
+            tables_fate.get(p['id']) or fate(p), p['outcome_details'],
             '; '.join(a['title'] + (' (представлен)' if a['status'] == 'nominated' else '')
                       for a in aw) or None,
             main_s.get('note'),
