@@ -189,7 +189,7 @@ def load_extra_sheet(ws, sheet, prefix, awards):
         r['orig_fio'] = fio(r)
         r['notes'] = []
         r['src'] = [sheet.replace('_', ' ')]
-        r['awards'] = list(awards)
+        r['awards'] = with_lower_degrees(awards)
         rows.append(r)
     return rows
 
@@ -197,6 +197,34 @@ def load_extra_sheet(ws, sheet, prefix, awards):
 def glory(degree, sheet):
     return {'kind': 'order_of_glory', 'degree': degree, 'status': 'awarded',
             'title': f'Орден Славы {ROMAN[degree]} степени', 'source': sheet}
+
+
+# Орденом Славы награждали по порядку: III, потом II, потом I. Кавалер
+# II степени — значит, и III (правило автора, 25.11.2026); на листе
+# «Кавалеры_III» таких людей обычно нет. Источник у такой награды — эта
+# пометка, чтобы было видно, что она добавлена по правилу.
+IMPLIED_SOURCE = 'по старшей степени'
+
+
+def with_lower_degrees(awards):
+    have = {a['degree'] for a in awards if a['kind'] == 'order_of_glory' and a['status'] == 'awarded'}
+    out = list(awards)
+    for degree in (2, 3):
+        if degree not in have and any(d and d < degree for d in have):
+            out.append(dict(glory(degree, IMPLIED_SOURCE)))
+            have.add(degree)
+    return out
+
+
+def add_awards(keep, new):
+    """Награды строки new — к строке keep, без повторов; настоящая запись
+    с листа автора вытесняет добавленную по правилу."""
+    for a in new:
+        same = next((x for x in keep if award_key(x) == award_key(a)), None)
+        if same is None:
+            keep.append(a)
+        elif same['source'] == IMPLIED_SOURCE and a['source'] != IMPLIED_SOURCE:
+            keep[keep.index(same)] = a
 
 
 def list_twins(rows):
@@ -240,7 +268,7 @@ def merge_sheets(rows, log):
                     keep = k
                     break
         if keep:
-            keep['awards'] += [a for a in r['awards'] if a not in keep['awards']]
+            add_awards(keep['awards'], r['awards'])
             keep['src'] += [x for x in r['src'] if x not in keep['src']]
             if not birth_of(keep)[1] and y:
                 keep['year'], keep['birth'] = r['year'], r['birth']
