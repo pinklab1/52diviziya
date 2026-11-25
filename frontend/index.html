@@ -154,6 +154,7 @@
   }
   .search-input {
     flex: 1;
+    min-width: 0;   /* иначе на узком телефоне кнопка «Найти» вылезала за край */
     border: none;
     background: transparent;
     padding: 0.5rem 0.8rem;
@@ -453,6 +454,13 @@
     margin-top: 0.15rem;
     text-transform: uppercase;
   }
+  .m-fate {
+    font-family: 'PT Serif', serif;
+    font-size: 1rem;
+    color: var(--ink);
+    line-height: 1.4;
+    margin: -0.7rem 0 1.2rem;   /* сразу под годами жизни */
+  }
   .m-rank {
     display: inline-block;
     font-family: 'PT Serif', serif;
@@ -484,13 +492,14 @@
   /* Полный кавалер — три ордена: должны встать в ряд с фото. */
   .m-awards { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: flex-start; }
   .m-award {
-    width: 104px; text-align: center;
+    min-width: 84px; text-align: center;
     padding: 0.4rem 0.2rem; border-radius: 3px;
   }
-  .m-award-img { height: 96px; display: flex; align-items: center; justify-content: center; }
-  .m-award-img img { max-height: 96px; max-width: 96px; object-fit: contain; }
-  .m-award .aw-ico svg { width: 84px; height: 84px; }
-  .m-award-title { font-family: 'PT Serif', serif; font-size: 0.85rem; color: var(--ink); line-height: 1.3; margin-top: 0.4rem; }
+  .m-award-img { height: 68px; display: flex; align-items: center; justify-content: center; }
+  .m-award-img img { max-height: 68px; max-width: 68px; object-fit: contain; }
+  .m-award .aw-ico svg { width: 60px; height: 60px; }
+  /* Ровно две строки: «Орден Славы» / «II степени» (перенос — <br>). */
+  .m-award-title { font-family: 'PT Serif', serif; font-size: 0.8rem; color: var(--ink); line-height: 1.3; margin-top: 0.3rem; white-space: nowrap; }
   .m-award-status { font-family: 'PT Serif', serif; font-style: italic; font-size: 0.8rem; color: var(--faded); }
   .m-award-doc {
     font-family: 'JetBrains Mono', monospace; font-size: 0.58rem; letter-spacing: 0.08em;
@@ -499,10 +508,10 @@
   .m-award.has-doc { cursor: pointer; }
   .m-award.has-doc:hover { background: var(--aged); }
   @media (max-width: 600px) {
-    .m-award { width: 96px; }
-    .m-award-img { height: 84px; }
-    .m-award-img img { max-height: 84px; max-width: 84px; }
-    .m-award .aw-ico svg { width: 64px; height: 64px; }
+    .m-award { min-width: 76px; }
+    .m-award-img { height: 60px; }
+    .m-award-img img { max-height: 60px; max-width: 60px; }
+    .m-award .aw-ico svg { width: 52px; height: 52px; }
   }
 
   /* Наградной лист поверх карточки человека */
@@ -693,7 +702,7 @@ function updateStats() {
   document.getElementById('stTotal').textContent = allPersons.length;
   document.getElementById('stUnits').textContent = allUnits.length;
   document.getElementById('stKilled').textContent =
-    allPersons.filter(p => p.death_date).length;
+    allPersons.filter(isDead).length;      // по судьбе: и тем, у кого дата неполная
 }
 
 // ── ФИЛЬТРАЦИЯ ────────────────────────────────────────────────────────
@@ -767,11 +776,13 @@ function render() {
     const role = firstService.role || '—';
     const unit = firstService.units && firstService.units.name || '';
     const birth = p.birth_date ? new Date(p.birth_date).getFullYear() : null;
-    const death = p.death_date ? formatDate(p.death_date) : null;
+    // Крест и красная полоса — по судьбе, дата — та же, что в блоке «Судьба».
+    const dead = isDead(p);
+    const deathDate = dead ? (fateInfo(p) || {}).date || '' : '';
 
     return `
-      <div class="card ${death ? 'killed' : ''}" data-id="${p.id}">
-        ${death ? `<div class="card-death">${death}</div>` : ''}
+      <div class="card ${dead ? 'killed' : ''}" data-id="${p.id}">
+        ${dead ? `<div class="card-death">${escapeHtml(deathDate)}</div>` : ''}
         <div class="card-top">
           <div class="card-photo">${p.photo_url ? `<img src="${p.photo_url}" alt="${escapeHtml(fio)}" loading="lazy" onerror="this.parentElement.innerHTML='${initials}'">` : initials}</div>
           ${awardIcons(p)}
@@ -800,7 +811,10 @@ function openModal(p) {
   const fio = [p.last_name, p.first_name, p.patronymic].filter(Boolean).join(' ');
   const initials = (p.last_name || '?').charAt(0);
   const birth = p.birth_date ? new Date(p.birth_date).getFullYear() : null;
-  const death = p.death_date ? formatDate(p.death_date) : null;
+  // Годы жизни одной строкой («1895 — † август 1942»), под ней — судьба;
+  // у погибших дата уже в годах жизни, в судьбе её не повторяем.
+  const fi = fateInfo(p);
+  const fate = isDead(p) ? '' : fateText(fi);   // у погибших — в строке годов жизни
 
   const services = (p.service_records || []).map(sr => `
     <div class="m-service">
@@ -816,10 +830,8 @@ function openModal(p) {
       ${awardsRow(p)}
     </div>
     <div class="m-name">${escapeHtml(fio)}</div>
-    <div class="m-meta">
-      ${birth ? `${birth} год рождения` : 'Год рождения неизвестен'}
-      ${death ? ` · погиб ${death}` : ''}
-    </div>
+    <div class="m-meta">${escapeHtml(lifeLine(p, birth, fi))}</div>
+    ${fate ? `<div class="m-fate">${escapeHtml(fate)}</div>` : ''}
     <div class="m-section">
       <div class="m-section-title">Послужной список</div>
       ${services || '<div class="m-service"><div class="m-service-role">Сведения не сохранились</div></div>'}
@@ -915,6 +927,72 @@ function escapeHtml(s) {
 function formatDate(s) {
   const d = new Date(s);
   return `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.${d.getFullYear()}`;
+}
+
+// Неполная дата из документа — по-человечески: «__.08.1942» → «август 1942»,
+// «00.08.42 г.» → «август 1942», «__.__.1947» → «1947»; остальное как есть
+// («между 25.10.1944 и 04.11.1944»).
+const MONTHS = ['январь','февраль','март','апрель','май','июнь','июль','август',
+                'сентябрь','октябрь','ноябрь','декабрь'];
+function partialDate(t) {
+  const s = (t || '').trim().replace(/\s*г\.?$/, '');
+  let m = s.match(/^(?:__|00)\.(\d{1,2})\.(\d{2}|\d{4})$/);
+  if (m && +m[1] >= 1 && +m[1] <= 12) {
+    return `${MONTHS[+m[1] - 1]} ${m[2].length === 2 ? '19' + m[2] : m[2]}`;
+  }
+  m = s.match(/^(?:__|00)\.(?:__|00)\.(\d{4})$/);
+  if (m) return m[1];
+  return s;
+}
+
+// ── СУДЬБА ─────────────────────────────────────────────────────────────
+// Всё о гибели и выбытии — в одном месте: «Погиб 15.03.1944 — убит»,
+// «Погиб, август 1942». Дата: дата гибели, иначе дата выбытия из службы,
+// иначе неполная дата из документа. Пояснение — подробности судьбы или
+// причина выбытия, если они говорят больше, чем само слово судьбы.
+const FATE = {
+  killed: 'Погиб', died_of_wounds: 'Умер от ран', executed: 'Расстрелян',
+  missing: 'Пропал без вести', pow: 'Плен', pow_survived: 'Плен, выжил',
+  survived: 'Выжил',
+};
+const DEAD = new Set(['killed', 'died_of_wounds', 'executed']);
+// Судьба главнее даты: у «Плен» дата гибели в базе бывает, но креста нет.
+const isDead = p => p.outcome ? DEAD.has(p.outcome) : !!p.death_date;
+
+function fateInfo(p) {
+  const recs = p.service_records || [];
+  const withDate = recs.find(s => s.date_to) || recs.find(s => s.date_to_text) || {};
+  const full = p.death_date || withDate.date_to;
+  const date = full ? formatDate(full) : partialDate(withDate.date_to_text);
+  let label = FATE[p.outcome] || (p.death_date ? 'Погиб' : null);
+  const details = (p.outcome_details || '').trim();
+  if (p.outcome === 'died_of_wounds' && /^умер(ла)? от болезни/.test(details)) label = 'Умер от болезни';
+  const reason = (recs.find(s => s.end_reason) || {}).end_reason || '';
+  if (!label && !date && !reason) return null;
+  // Пояснение без повторов: «погиб» после «Погиб» не нужно.
+  const plain = s => s.toLowerCase().replace(/ё/g, 'е').trim();
+  const note = [details, reason].find(x => x && plain(x) !== plain(label || '')) || '';
+  return { label: label || 'Выбыл', date, full: !!full, note };
+}
+
+// У погибших судьба — продолжением годов жизни, в скобках, словами автора
+// из таблицы (fate_text): «1895 — † август 1942 (погиб)», «… (погибла)»,
+// «… (умер от отравления)». Нет записи автора — общее слово по категории.
+function lifeLine(p, birth, fi) {
+  if (isDead(p)) {
+    const end = fi && fi.date ? fi.date : '';
+    // «погиб (в штрафбате)» → «погиб, в штрафбате»: скобки в скобках не нужны.
+    const how = (p.fate_text || (fi ? fi.label.toLowerCase() : ''))
+      .replace(/\s*\(([^()]*)\)/g, ', $1');
+    return `${birth || '?'} — †${end ? ' ' + end : ''}${how ? ` (${how})` : ''}`;
+  }
+  return birth ? `${birth} г. р.` : 'Год рождения неизвестен';
+}
+
+function fateText(f) {
+  if (!f) return '';
+  const head = f.date ? `${f.label}${f.full ? ' ' : ', '}${f.date}` : f.label;
+  return head + (f.note ? ` — ${f.note}` : '');
 }
 
 // ── EVENTS ────────────────────────────────────────────────────────────

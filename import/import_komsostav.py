@@ -431,6 +431,19 @@ def fate_parts(fate):
     return head, notes
 
 
+def fate_text(fate):
+    """Судьба словами автора, как в таблице: «погиб», «погибла», «умер от
+    отравления», «погиб (автокатастрофа)». Мусор в скобках («(;bd)(»)
+    отбрасывается, первая буква — строчная: на сайте это идёт в скобках
+    после даты смерти."""
+    s = clean(fate)
+    if not s:
+        return None
+    s = re.sub(r'\(([^()]*)\)?', lambda m: m.group(0) if len(re.findall(r'[а-яё]', m.group(1).lower())) >= 3 else '', s)
+    s = ' '.join(s.split())
+    return (s[:1].lower() + s[1:]) or None
+
+
 def outcome_of(r):
     """Судьба из столбца «Судьба». С в-03 автор пишет точнее: «умер от ран»,
     «умер от болезни», «погибла», «погиб (автокатастрофа)», а «… (жив)» —
@@ -566,13 +579,13 @@ def load_from_db(cur):
         return [dict(zip(names, row)) for row in cur.fetchall()]
 
     persons = fetch("""SELECT id, last_name, first_name, patronymic, birth_date,
-                              death_date, outcome, outcome_details, sources
+                              death_date, outcome, outcome_details, fate_text, sources
                          FROM persons ORDER BY id""")
     for p in persons:
         for k in ('birth_date', 'death_date'):
             p[k] = p[k].isoformat() if p[k] else None
         p['sources'] = p['sources'] or []
-    records = fetch("""SELECT id, person_id, unit_id, rank, role, date_to,
+    records = fetch("""SELECT id, person_id, unit_id, rank, role, date_to, date_to_text,
                               end_reason, note FROM service_records ORDER BY id""")
     for s in records:
         s['date_to'] = s['date_to'].isoformat() if s['date_to'] else None
@@ -831,17 +844,19 @@ def build_plan(rows, persons, records, units, decisions, fixes=None, comments=No
         died = outcome in ('killed', 'died_of_wounds', 'executed')
         out_date = parse_date(r['out_date'])
         notes = [x for x in [extra_note(r)] if x]
-        if r['out_date'] and not out_date:
-            notes.append(f'дата выбытия: {r["out_date"]}')
         record = {
             'unit': unit_name, 'rank': r['rank'], 'role': r['role'],
             'date_to': out_date, 'end_reason': r['out_reason'],
+            # Неполная дата («__.08.1942») — как в документе, в своё поле
+            # (миграция 005); раньше уходила в примечание и не была видна.
+            'date_to_text': r['out_date'] if r['out_date'] and not out_date else None,
             'note': '; '.join(notes) or None,
         }
         person = {
             'last_name': r['last'], 'first_name': r['first'], 'patronymic': r['patr'],
             'birth_date': birth, 'outcome': outcome, 'outcome_details': details_of(r),
             'death_date': out_date if died else None,
+            'fate_text': fate_text(r['fate']),
         }
         base = {'row': r, 'record': record, 'person_new': person, 'why': why,
                 'awards': r['awards']}
@@ -863,10 +878,10 @@ def build_plan(rows, persons, records, units, decisions, fixes=None, comments=No
         p = cands[0]
         changes = {}
         for field in ('last_name', 'first_name', 'patronymic', 'outcome',
-                      'outcome_details', 'death_date'):
+                      'outcome_details', 'death_date', 'fate_text'):
             new = person[field]
-            if new and new != p[field]:
-                changes[field] = (p[field], new)
+            if new and new != p.get(field):
+                changes[field] = (p.get(field), new)
         # «погиб» в списке — общее слово; «умер от ран» в базе точнее.
         if changes.get('outcome') == ('died_of_wounds', 'killed'):
             del changes['outcome']
@@ -973,14 +988,14 @@ def plan_record(person_id, existing, record, units):
     elif record['unit'] and unit_id and target['unit_id'] != unit_id:
         old = next((n for n, i in units.items() if i == target['unit_id']), None)
         diff['unit'] = (old, record['unit'])
-    for field in ('rank', 'role', 'date_to', 'end_reason', 'note'):
-        new = record[field]
+    for field in ('rank', 'role', 'date_to', 'date_to_text', 'end_reason', 'note'):
+        new, old = record.get(field), target.get(field)
         # «не установлено» — ответ на пустую клетку списка; то, что
         # про человека уже известно в базе, им не затираем.
-        if new == 'не установлено' and target[field]:
+        if new == 'не установлено' and old:
             continue
-        if new and norm(new) != norm(target[field]):
-            diff[field] = (target[field], new)
+        if new and norm(new) != norm(old):
+            diff[field] = (old, new)
     return ('update', target, diff) if diff else ('same', target, {})
 
 
@@ -991,7 +1006,8 @@ FIELD_RU = {
     'last_name': 'фамилия', 'first_name': 'имя', 'patronymic': 'отчество',
     'birth_date': 'дата рождения', 'outcome': 'судьба', 'outcome_details': 'подробности',
     'death_date': 'дата гибели', 'rank': 'звание', 'role': 'должность',
-    'date_to': 'дата выбытия', 'end_reason': 'причина выбытия', 'note': 'примечание',
+    'date_to': 'дата выбытия', 'date_to_text': 'дата выбытия (как в документе)',
+    'end_reason': 'причина выбытия', 'note': 'примечание', 'fate_text': 'судьба (как в таблице)',
     'unit': 'часть',
 }
 OUTCOME_RU = {
@@ -1334,10 +1350,12 @@ def apply_plan(db, plan, units, division_id):
     def write_record(person_id, op, target, rec):
         if op == 'insert':
             cur.execute("""INSERT INTO service_records
-                             (person_id, unit_id, division_id, rank, role, date_to, end_reason, note)
-                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                             (person_id, unit_id, division_id, rank, role, date_to, date_to_text,
+                              end_reason, note)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                         (person_id, units.get(rec['unit']), division_id, rec['rank'],
-                         rec['role'], rec['date_to'], rec['end_reason'], rec['note']))
+                         rec['role'], rec['date_to'], rec.get('date_to_text'),
+                         rec['end_reason'], rec['note']))
         elif op == 'update':
             values = {f: new for f, (_, new) in rec.items()}
             if 'unit' in values:
@@ -1423,10 +1441,10 @@ def apply_plan(db, plan, units, division_id):
             pr = it['person_new']
             cur.execute("""INSERT INTO persons
                              (last_name, first_name, patronymic, birth_date, death_date,
-                              outcome, outcome_details, sources, last_updated)
-                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW()) RETURNING id""",
+                              outcome, outcome_details, fate_text, sources, last_updated)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW()) RETURNING id""",
                         (pr['last_name'], pr['first_name'], pr['patronymic'], pr['birth_date'],
-                         pr['death_date'], pr['outcome'], pr['outcome_details'],
+                         pr['death_date'], pr['outcome'], pr['outcome_details'], pr['fate_text'],
                          Json([SOURCE_TAG] + sheet_tags(it['row']))))
             new_id = cur.fetchone()[0]
             write_record(new_id, 'insert', None, it['record'])
@@ -1455,6 +1473,57 @@ def apply_plan(db, plan, units, division_id):
     return done
 
 
+PERSON_FILL = ('birth_date', 'fate_text', 'outcome', 'outcome_details', 'death_date')
+RECORD_FILL = ('rank', 'end_reason', 'date_to', 'date_to_text')
+
+
+def fill_empty(db, plan, apply):
+    """Заполнить из таблицы только пустые на сайте поля — ничего не затирая,
+    без добавлений и удалений. «Не обновлять» / «прежняя версия» не мешают:
+    так у Леонтьева (погиб, август 1942) на сайте было пусто, хотя в таблице
+    всё есть. Запись о службе — та, которую уточняет строка таблицы, а если
+    у человека она одна — эта одна."""
+    persons, records = defaultdict(dict), defaultdict(dict)
+    names = {}
+    for it in plan['items']:
+        if it['kind'] != 'match':
+            continue
+        p, pr = it['person'], it['person_new']
+        names[p['id']] = fio(it['row'])
+        for f in PERSON_FILL:
+            if pr.get(f) and not p.get(f) and f not in persons[p['id']]:
+                persons[p['id']][f] = pr[f]
+        op, target, _ = it['op']
+        recs = plan['recs_by_person'][p['id']]
+        if op not in ('update', 'same'):
+            target = recs[0] if len(recs) == 1 else None
+        if target:
+            for f in RECORD_FILL:
+                new = it['record'].get(f)
+                if new and new != 'не установлено' and not target.get(f) \
+                        and f not in records[target['id']]:
+                    records[target['id']][f] = new
+    persons = {k: v for k, v in persons.items() if v}
+    records = {k: v for k, v in records.items() if v}
+    count = Counter(f for v in list(persons.values()) + list(records.values()) for f in v)
+    print(f'Заполнится пустое: у {len(persons)} человек и в {len(records)} записях о службе')
+    for f, n in count.most_common():
+        print(f'  {FIELD_RU.get(f, f)}: {n}')
+    if not apply:
+        return
+    cur = db.cursor()
+    for pid, vals in persons.items():
+        # COALESCE: если поле успели заполнить — не трогаем.
+        sets = ', '.join(f'{f} = COALESCE({f}, %s)' for f in vals)
+        cur.execute(f'UPDATE persons SET {sets}, last_updated = NOW() WHERE id = %s',
+                    list(vals.values()) + [pid])
+    for rid, vals in records.items():
+        sets = ', '.join(f'{f} = COALESCE({f}, %s)' for f in vals)
+        cur.execute(f'UPDATE service_records SET {sets} WHERE id = %s', list(vals.values()) + [rid])
+    db.commit()
+    print(f'✓ Записано в базу: пустое заполнено у {len(persons)} человек, {len(records)} записей')
+
+
 # ── Главная функция ─────────────────────────────────────────────────────────
 
 def main():
@@ -1466,8 +1535,9 @@ def main():
     ap.add_argument('--apply', action='store_true', help='записать изменения в базу')
     ap.add_argument('--only', help='записать только эти коды сверки, через запятую '
                                    '(точечная правка после полной записи)')
-    ap.add_argument('--fill-birth', action='store_true',
-                    help='записать только год/дату рождения тем, у кого на сайте он пуст')
+    ap.add_argument('--fill-empty', '--fill-birth', dest='fill_empty', action='store_true',
+                    help='заполнить из таблицы только пустые на сайте поля (год рождения, '
+                         'судьба, звание, выбытие), ничего не затирая')
     args = ap.parse_args()
 
     if args.apply and args.dump:
@@ -1519,27 +1589,8 @@ def main():
         plan = dict(plan, items=items, missing_units=set())
         for it in items:
             print(f"  {it['key']} {fio(it['row'])}: {what_changes(it) or 'без изменений'}")
-    if args.fill_birth:
-        # Только пустые годы рождения у найденных на сайте людей — ни
-        # других полей, ни добавлений, ни удалений.
-        fill = {}
-        for it in plan['items']:
-            # «Не обновлять» не мешает: пустой год заполняется, ничего не затирая.
-            if it['kind'] != 'match':
-                continue
-            old, new = it['changes'].get('birth_date', (None, None))
-            if old is None and new and it['person']['id'] not in fill:
-                fill[it['person']['id']] = (new, fio(it['row']))
-        print(f'Год рождения появится у {len(fill)} человек; примеры:')
-        for pid, (d, name) in list(fill.items())[:8]:
-            print(f'  {pid} {name}: {ru("birth_date", d)}')
-        if args.apply:
-            cur = db.cursor()
-            for pid, (d, _) in fill.items():
-                cur.execute('UPDATE persons SET birth_date = %s, last_updated = NOW() '
-                            'WHERE id = %s AND birth_date IS NULL', (d, pid))
-            db.commit()
-            print(f'✓ Записано в базу: год рождения у {len(fill)}')
+    if args.fill_empty:
+        fill_empty(db, plan, args.apply)
         if db:
             db.close()
         return
